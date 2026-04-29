@@ -91,6 +91,10 @@ response_schema:
         Primary_Stack: { type: array, items: { type: string } }
         Tech_Proof_URL: { type: string, description: "The URL proving the tech stack or operational context." }
         funding_signal: { type: string, description: "Growth or funding context if publicly available. Null if not found. Never a disqualifier." }
+        friction_type:
+          type: string
+          enum: ["API Stutter", "Scale Friction", "Manual Data Debt", "Displacement Signal"]
+          description: "Primary archetype from the Forensic Dictionary. Required for Neptune handoff. Derived from friction_notes reasoning — output the final typed verdict here."
         Contact_Recon: { type: string, description: "Decision-maker contact  email pattern or LinkedIn. Role must match campaign service intent." }
         Email: { type: string, description: "Best candidate email address. Null if not found. Never invented." }
 

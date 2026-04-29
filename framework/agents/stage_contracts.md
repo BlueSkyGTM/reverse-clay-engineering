@@ -63,6 +63,39 @@ Neptune only runs if Nemo returns `status: ENRICHED`. SHIPWRECKED leads go to `f
 
 ---
 
+## Nemo → Neptune Formatter (n8n Function Node)
+
+**This is not an agent.** It is a deterministic Function node in the n8n workflow.
+Zero tokens. Zero hallucination risk. One job: translate Nemo's full Enriched_Lead
+into the minimal brief Neptune needs to execute the formula.
+
+**Node name:** `Format_Neptune_Brief`
+**Node type:** Function (n8n built-in)
+**Position:** Between Nemo HTTP Request node and Neptune HTTP Request node
+
+**Input:** Full Nemo `Enriched_Lead` JSON object
+**Output:** Minimal Neptune brief
+
+{
+  "Company_Name": "{{ $json.Enriched_Lead.Company_Name }}",
+  "friction_type": "{{ $json.Enriched_Lead.friction_type }}",
+  "funding_signal": "{{ $json.Enriched_Lead.funding_signal ?? null }}",
+  "primary_signal": "{{ $json.Enriched_Lead.Primary_Stack[0] ?? null }}",
+  "Contact_Recon": "{{ $json.Enriched_Lead.Contact_Recon }}",
+  "Target_Service_Intent": "{{ $json.Enriched_Lead.Target_Service_Intent }}"
+}
+
+**Rules:**
+- If funding_signal is null: pass null. Neptune omits it. Never coerce.
+- If Primary_Stack is empty: pass null for primary_signal.
+- Contact_Recon is passed through for database write only — Neptune does not use it in copy.
+- Do not add fields. Do not transform values. Pass through only.
+
+**Node library reference:** Add to pipeline/nodes/library.json as formatter_neptune_brief
+**Build:** Include in V4 workflow JSON (Phase 2)
+
+---
+
 ## Neptune  Database
 
 Neptune writes one field: `Outreach_Bite` (string, 3-4 sentences).
