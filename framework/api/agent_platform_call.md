@@ -11,9 +11,9 @@
 
 | Agent | Model | Endpoint |
 |---|---|---|
-| Ahab | gemini-2.5-flash | `https://us-central1-aiplatform.googleapis.com/v1/projects/{GCP_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent` |
-| Nemo | gemini-2.5-pro | `https://us-central1-aiplatform.googleapis.com/v1/projects/{GCP_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent` |
-| Neptune | gemini-2.5-pro | `https://us-central1-aiplatform.googleapis.com/v1/projects/{GCP_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent` |
+| Ahab | gemini-2.5-flash | `https://aiplatform.googleapis.com/v1/projects/{GCP_PROJECT_ID}/locations/global/publishers/google/models/gemini-2.5-flash:generateContent` |
+| Nemo | gemini-2.5-pro | `https://aiplatform.googleapis.com/v1/projects/{GCP_PROJECT_ID}/locations/global/publishers/google/models/gemini-2.5-pro:generateContent` |
+| Neptune | gemini-2.5-pro | `https://aiplatform.googleapis.com/v1/projects/{GCP_PROJECT_ID}/locations/global/publishers/google/models/gemini-2.5-pro:generateContent` |
 
 ---
 
