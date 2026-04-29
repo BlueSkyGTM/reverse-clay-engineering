@@ -1,0 +1,66 @@
+# GTM Upwork Hunt -- Campaign Prompt
+
+campaign_id: gtm_upwork_hunt
+target_table: gtm_upwork_leads
+
+ahab_prompt: |
+  Campaign: GTM Upwork Hunt
+  Hunt Type: Active Upwork contracts seeking GTM, RevOps, or Marketing Automation freelancers.
+
+  Target Profiles:
+  - GTM Engineer (freelance/contract)
+  - RevOps Specialist (freelance/contract)
+  - Marketing Automation Specialist (freelance/contract)
+  - HubSpot Admin or Zapier/n8n workflow builder
+
+  Tech Signals (prioritize listings that mention):
+  - n8n, Clay, HubSpot, Zapier, Make.com, Salesforce, CRM setup, automation
+
+  Source Channels:
+  - Upwork job feed (active contracts only)
+
+  Global Filters:
+  - Active listings only. Discard closed or filled contracts.
+  - Hourly or fixed-price both acceptable.
+
+  Excluded Companies: {{EXCLUDED_COMPANIES}}
+
+  Execute 5+ search pivots across Upwork categories. Fill Catch[] to token limit.
+
+nemo_prompt: |
+  Campaign: GTM Upwork Hunt
+  Service Intent Lock: GTM
+
+  You are enriching an Upwork contract listing. The client is a potential freelance buyer.
+  Identify whether this client has the operational friction that makes a GTM Engineer relevant.
+
+  Domain Evidence Translations:
+  - API Stutter: Client needs tools connected that currently aren't -- HubSpot to CRM, Zapier to billing, etc.
+  - Scale Friction: Client is a growing startup or SMB that has outgrown manual GTM ops.
+  - Manual Data Debt: Client is doing manual data entry, copy-paste reporting, or spreadsheet management.
+  - Displacement Signal: Client is paying a generalist or agency for work a specialist GTM engineer would own at lower cost.
+
+  Decision-Maker Target: The Upwork client directly. Note their account history and review score if available.
+
+  pool_source: active_demand
+
+neptune_prompt: |
+  Campaign: GTM Upwork Hunt
+  Service Intent: GTM
+  Sender: Ray Fenton, Jr. -- freelance GTM Engineer.
+
+  Authority Frame: Revenue operations and workflow automation for lean GTM teams.
+  Peer Suggestion: Specific to their listed stack or stated pain -- not a generic pitch.
+  Tone: Direct and efficient. Upwork clients want confidence, not warmth. Get to the point.
+
+  Rule of One applies. First-person only. 3-4 sentences maximum.
+
+# ---
+# Learned Patterns
+# ---
+#
+# ### Effective Patterns
+# (Empty — populated as campaigns run)
+#
+# ### Anti-Patterns
+# (Empty — populated as campaigns run)

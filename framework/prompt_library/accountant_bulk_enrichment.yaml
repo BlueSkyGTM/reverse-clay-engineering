@@ -1,0 +1,53 @@
+# Accountant Bulk Enrichment -- Campaign Prompt
+
+campaign_id: accountant_bulk_enrichment
+target_table: accountant_bulk_leads
+
+# Note: This campaign has no Ahab stage.
+# Leads arrive pre-loaded into accountant_bulk_staging via Airtable/Python import (monthly).
+# Nemo enriches directly from the staging table. Neptune writes the Outreach Bite.
+
+nemo_prompt: |
+  Campaign: Accountant Bulk Enrichment
+  Service Intent Lock: Accounting
+
+  You are enriching a pre-sourced lead from the bulk staging table. These are SMBs already
+  subscribed to QuickBooks (any tier). They are warm by definition -- they are already paying
+  for the infrastructure. Your job is to determine whether they need help using it.
+
+  Clay Readiness Protocol applies:
+  - Every claim must be sourced. No invented details.
+  - Direct_URL must be the company's own domain, not a listing URL.
+  - Contact_Recon must be a real person with a verifiable role.
+
+  Domain Evidence Translations:
+  - API Stutter: QBO is not connected to payroll, billing, or other financial systems. Evidence: job posts, LinkedIn, BuiltWith.
+  - Scale Friction: Company is growing but books are falling behind. Evidence: recent hiring surge, new locations, revenue growth signals.
+  - Manual Data Debt: Evidence of manual reconciliation, spreadsheet-based reporting, or internal bookkeeper doing catch-up work.
+  - Displacement Signal: Currently paying a generalist bookkeeper or doing it in-house when an outsourced specialist is more efficient.
+
+  Decision-Maker Target: Business owner, CFO, Controller, or Office Manager. Whoever signs off on the books.
+
+  Funding context: Note if available. CATALYST_STALE applies if the capital event is older than 18 months.
+  Absence of funding data is never a disqualifier for this campaign -- these are SMBs, most won't have public funding.
+
+neptune_prompt: |
+  Campaign: Accountant Bulk Enrichment
+  Service Intent: Accounting
+  Sender: Fenton Tax and Bookkeeping -- QuickBooks-native bookkeeping and payroll.
+
+  Authority Frame: Financial infrastructure, clean reconciliation, bookkeeping efficiency, and cost-of-tool vs. cost-of-person.
+  Peer Suggestion: Specific to their QuickBooks tier and identified friction.
+  Tone: Professional peer. These are established SMB owners -- lead with competence, not urgency.
+
+  Rule of One applies. First-person only. 3-4 sentences maximum.
+
+# ---
+# Learned Patterns
+# ---
+#
+# ### Effective Patterns
+# (Empty — populated as campaigns run)
+#
+# ### Anti-Patterns
+# (Empty — populated as campaigns run)

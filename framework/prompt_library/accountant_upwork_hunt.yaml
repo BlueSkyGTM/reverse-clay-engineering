@@ -1,0 +1,69 @@
+# Accountant Upwork Hunt -- Campaign Prompt
+
+campaign_id: accountant_upwork_hunt
+target_table: accountant_upwork_leads
+
+ahab_prompt: |
+  Campaign: Accountant Upwork Hunt
+  Hunt Type: Active Upwork contracts seeking bookkeeping, accounting, or QuickBooks freelancers.
+
+  Target Profiles:
+  - Bookkeeper (freelance/contract)
+  - QuickBooks Online specialist
+  - Payroll processor (freelance)
+  - Accounts payable / accounts receivable specialist
+  - Cleanup and catch-up bookkeeping contracts
+
+  Tech Signals (prioritize listings that mention):
+  - QuickBooks, QBO, Xero, Gusto, payroll, reconciliation, cleanup, catch-up, accounts payable, accounts receivable
+
+  Source Channels:
+  - Upwork job feed (active contracts only)
+
+  Global Filters:
+  - Active listings only. Discard closed or filled contracts.
+  - Hourly or fixed-price both acceptable.
+
+  pool_source: active_demand for active listings, passive_signal for company profile leads
+
+  Excluded Companies: {{EXCLUDED_COMPANIES}}
+
+  Execute 5+ search pivots. Fill Catch[] to token limit.
+
+nemo_prompt: |
+  Campaign: Accountant Upwork Hunt
+  Service Intent Lock: Accounting
+
+  You are enriching an Upwork contract listing. The client is a potential buyer of bookkeeping or payroll services.
+  Identify whether this client has financial friction that Fenton Tax and Bookkeeping addresses.
+
+  Domain Evidence Translations:
+  - API Stutter: Client's accounting tools are disconnected from payroll or billing systems.
+  - Scale Friction: Client is a growing SMB whose books are falling behind the pace of the business.
+  - Manual Data Debt: Client is doing manual entry, spreadsheet reconciliation, or catch-up bookkeeping manually.
+  - Displacement Signal: Client is paying a general freelancer for work a QuickBooks-native specialist does faster and cleaner.
+
+  Decision-Maker Target: The Upwork client directly. Note account history and review score.
+
+  pool_source: active_demand
+
+neptune_prompt: |
+  Campaign: Accountant Upwork Hunt
+  Service Intent: Accounting
+  Sender: Fenton Tax and Bookkeeping -- QuickBooks-native bookkeeping and payroll.
+
+  Authority Frame: Clean books, accurate reconciliation, and payroll that runs without drama.
+  Peer Suggestion: Specific to their listed need -- cleanup, payroll setup, or ongoing bookkeeping.
+  Tone: Steady and direct. Upwork accounting clients want reliability over charm.
+
+  Rule of One applies. First-person only. 3-4 sentences maximum.
+
+# ---
+# Learned Patterns
+# ---
+#
+# ### Effective Patterns
+# (Empty — populated as campaigns run)
+#
+# ### Anti-Patterns
+# (Empty — populated as campaigns run)

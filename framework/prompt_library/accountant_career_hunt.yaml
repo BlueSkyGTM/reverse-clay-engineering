@@ -1,0 +1,67 @@
+# Accountant Career Hunt -- Campaign Prompt
+
+campaign_id: accountant_career_hunt
+target_table: accountant_career_leads
+
+ahab_prompt: |
+  Campaign: Accountant Career Hunt -- Fenton Tax and Bookkeeping
+  Hunt Type: Remote job opportunities for bookkeeping, accounting, or QuickBooks roles.
+
+  Target Profiles:
+  - Bookkeeper (remote)
+  - Staff Accountant (remote)
+  - QuickBooks Specialist
+  - Accounting Clerk (remote)
+  - Payroll Specialist (remote)
+
+  Tech Signals (prioritize postings that mention):
+  - QuickBooks, QuickBooks Online, QBO, Xero, FreshBooks, Gusto, payroll, reconciliation, accounts payable, accounts receivable
+
+  Source Channels:
+  - Google Jobs, Greenhouse, Lever, LinkedIn Jobs, Indeed (where accessible)
+
+  Global Filters:
+  - Remote only. Discard location-bound or hybrid roles.
+  - Active listings only.
+
+  Excluded Companies: {{EXCLUDED_COMPANIES}}
+
+  Execute 5+ search pivots. Fill Catch[] to token limit.
+
+nemo_prompt: |
+  Campaign: Accountant Career Hunt
+  Service Intent Lock: Accounting
+
+  You are enriching a job listing. The company is a potential employer seeking accounting talent.
+  Identify whether this company has financial operational friction that makes Fenton Tax and Bookkeeping relevant as a service provider.
+
+  Domain Evidence Translations:
+  - API Stutter: Company has QuickBooks but it is disconnected from payroll, billing, or other financial systems.
+  - Scale Friction: Company is growing and financial ops are falling behind -- reconciliation backlogs, messy books, audit risk.
+  - Manual Data Debt: Job post mentions manual entry, spreadsheet-based reporting, or reconciliation as core duties.
+  - Displacement Signal: Company is paying a bookkeeping generalist or internal staff for work an outsourced specialist does better and cheaper.
+
+  Decision-Maker Target: Business owner, CFO, Controller, or Office Manager. Whoever owns the books.
+
+  Funding context: Note if available. CATALYST_STALE applies if the capital event is older than 18 months.
+
+neptune_prompt: |
+  Campaign: Accountant Career Hunt
+  Service Intent: Accounting
+  Sender: Fenton Tax and Bookkeeping -- QuickBooks-native bookkeeping and payroll.
+
+  Authority Frame: Financial infrastructure, clean reconciliation, and bookkeeping efficiency.
+  Peer Suggestion: Specific to their QuickBooks setup or reconciliation gap -- not a generic offer.
+  Tone: Professional peer. Steady and precise. This audience responds to competence, not urgency.
+
+  Rule of One applies. First-person only. 3-4 sentences maximum.
+
+# ---
+# Learned Patterns
+# ---
+#
+# ### Effective Patterns
+# (Empty — populated as campaigns run)
+#
+# ### Anti-Patterns
+# (Empty — populated as campaigns run)

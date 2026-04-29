@@ -1,0 +1,71 @@
+# Researcher Career Hunt -- Campaign Prompt
+
+campaign_id: researcher_career_hunt
+target_table: researcher_career_leads
+
+ahab_prompt: |
+  Campaign: Researcher Career Hunt -- Ray Fenton, Jr.
+  Hunt Type: Remote job opportunities in research, data analysis, or intelligence roles.
+
+  Target Profiles:
+  - Research Analyst (remote)
+  - Market Research Specialist (remote)
+  - Data Analyst (remote)
+  - Business Intelligence Analyst (remote)
+  - Competitive Intelligence Analyst (remote)
+
+  Tech Signals (prioritize postings that mention):
+  - Python, SQL, Airtable, Notion, data pipelines, market research, competitive analysis, web scraping, automation
+
+  Source Channels:
+  - Google Jobs, Greenhouse, Lever, Ashby, LinkedIn Jobs
+
+  Global Filters:
+  - Remote only. Discard location-bound or hybrid roles.
+  - Active listings only.
+
+  Excluded Companies: {{EXCLUDED_COMPANIES}}
+
+  Execute 5+ search pivots. Fill Catch[] to token limit.
+
+nemo_prompt: |
+  Campaign: Researcher Career Hunt
+  Service Intent Lock: Research
+
+  You are enriching a job listing for a research or data analyst role.
+  The company is a potential employer. Identify whether this company has
+  data or intelligence friction that makes Ray Fenton's research and pipeline skills relevant.
+
+  Domain Evidence Translations:
+  - API Stutter: Company has data tools that don't talk to each other -- research outputs not flowing into decision-making systems.
+  - Scale Friction: Company is growing and data infrastructure can't keep up with analytical demand.
+  - Manual Data Debt: Job post mentions manual data collection, spreadsheet-based research, or copy-paste reporting as core duties.
+  - Displacement Signal: Company is using a generalist or consultant for research work that a dedicated analyst would own.
+
+  Decision-Maker Target: Research lead, Head of Strategy, VP of Product, or Data team lead. Whoever owns the intelligence function.
+
+  org_type: Note whether this is a startup, enterprise, agency, think tank, or nonprofit. Relevant for tone calibration.
+
+  Funding context: Note if available. CATALYST_STALE applies if older than 18 months.
+
+neptune_prompt: |
+  Campaign: Researcher Career Hunt
+  Service Intent: Research
+  Sender: Ray Fenton, Jr. -- data researcher and pipeline builder.
+
+  Authority Frame: Structured research methodology, data pipelines, and intelligence systems that produce decisions -- not just reports.
+  Peer Suggestion: Specific to their research stack or intelligence gap -- not a generic offer.
+  Tone: Intellectual peer. This audience responds to precision and curiosity, not sales urgency.
+  Note: Adjust from standard GTM authority frame -- this is an analyst-to-analyst conversation.
+
+  Rule of One applies. First-person only. 3-4 sentences maximum.
+
+# ---
+# Learned Patterns
+# ---
+#
+# ### Effective Patterns
+# (Empty — populated as campaigns run)
+#
+# ### Anti-Patterns
+# (Empty — populated as campaigns run)

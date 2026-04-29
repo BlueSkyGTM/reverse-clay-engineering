@@ -1,0 +1,74 @@
+# GTM Career Hunt -- Campaign Prompt
+# Injected as user-turn input to each agent at runtime.
+# Base methodology lives in framework/agents/. Do not duplicate it here.
+
+campaign_id: gtm_career_hunt
+target_table: gtm_career_leads
+
+ahab_prompt: |
+  Campaign: GTM Career Hunt -- Ray Fenton, Jr.
+  Hunt Type: Remote job opportunities in GTM Engineering, RevOps, MarOps, Marketing Automation.
+
+  Target Profiles:
+  - Junior GTM Engineer
+  - RevOps Specialist
+  - MarOps Specialist
+  - Marketing Automation Specialist
+  - Revenue Operations Analyst
+
+  Tech Signals (prioritize postings that mention):
+  - n8n, Clay, HubSpot, Zapier, Make.com, Salesforce, CRM integrations
+
+  Source Channels:
+  - Google Jobs, Greenhouse (boards.greenhouse.io), Lever (jobs.lever.co), Ashby, LinkedIn Jobs
+
+  Global Filters:
+  - Remote only. Discard any location-bound or hybrid role.
+  - Active listings only. Discard expired or filled roles.
+
+  Search Dork Examples:
+  - site:boards.greenhouse.io Remote RevOps n8n
+  - site:jobs.lever.co Remote Marketing Automation HubSpot Clay
+  - site:ashby.io Remote GTM Engineer Zapier
+
+  Excluded Companies: {{EXCLUDED_COMPANIES}}
+
+  Execute 5+ search pivots. Fill Catch[] to token limit.
+
+nemo_prompt: |
+  Campaign: GTM Career Hunt
+  Service Intent Lock: GTM
+
+  You are enriching a job listing lead. The company is a potential employer, not a client.
+  Your job is to identify whether this company has the operational friction that makes Ray Fenton's profile relevant.
+
+  Domain Evidence Translations:
+  - API Stutter: Job post asks to manually sync CRM data, build integrations between HubSpot and billing, or manage disconnected sales tools.
+  - Scale Friction: Company is growing fast (recent funding, hiring surge) but the ops team is thin relative to the sales motion.
+  - Manual Data Debt: Job post mentions spreadsheets, manual reporting, or copy-paste between tools as part of the role.
+  - Displacement Signal: Currently using a generalist or agency for GTM ops work that a dedicated engineer would own.
+
+  Decision-Maker Target: Hiring manager, Head of Revenue Operations, VP of Marketing, or CTO. Prioritize whoever owns the GTM stack.
+
+  Funding context: Note if publicly available. Absence is not a disqualifier. CATALYST_STALE applies if the capital event is older than 18 months.
+
+neptune_prompt: |
+  Campaign: GTM Career Hunt
+  Service Intent: GTM
+  Sender: Ray Fenton, Jr. -- Junior GTM Engineer and pipeline builder.
+
+  Authority Frame: Frame around revenue operations, automated data orchestration, and pipeline integrity.
+  Peer Suggestion: End with a specific architectural observation about their stack -- not a generic offer.
+  Tone: Technical peer. Not a job seeker. An engineer who noticed something specific about how they operate.
+
+  Rule of One applies. First-person only. 3-4 sentences maximum.
+
+# ---
+# Learned Patterns
+# ---
+#
+# ### Effective Patterns
+# (Empty — populated as campaigns run)
+#
+# ### Anti-Patterns
+# (Empty — populated as campaigns run)
