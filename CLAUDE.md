@@ -44,11 +44,18 @@ Ray directs the session. Claude reads the intent from the first message and load
 
 Three-agent AI pipeline for nightly lead discovery, forensic enrichment, and outreach synthesis.
 
-**Stack:** Cloud Scheduler → n8n (Cloud Run) → Gemini via Gemini Enterprise Agent Platform → Postgres (Cloud SQL / `nocodb_data`) → Retool (read-only UI)
+**Stack:** Cloud Scheduler → n8n (Cloud Run, scheduler/trigger only) → fleet-agents (Cloud Run Express server) → Gemini via Agent Platform generateContent API → Postgres (Cloud SQL / `nocodb_data`) → Retool (read-only UI)
 
 **Agents:** Ahab (find) → Nemo (enrich) → Neptune (outreach synthesis)
 
-**Architecture:** HTTP Request nodes call Agent Platform generateContent endpoint directly. No LangChain nodes. Campaign specifics are injected via the prompt library at runtime.
+**Architecture — Pull Model (current):**
+- n8n is a scheduler and traffic controller only. It does not carry lead data between nodes.
+- Ahab receives a campaign message string, calls Gemini (with googleSearch grounding), INSERTs one row per lead into `gtm_career_leads` with `ahab_payload` (jsonb) and `status='Scraped'`, then returns `{ session_ids: [...] }` to n8n.
+- n8n splits the session_ids array and passes a single `{ session_id }` string to each downstream node. Zero payload.
+- Nemo receives a session_id, SELECTs `ahab_payload` from Postgres, calls Gemini for forensic enrichment, UPDATEs the row with `nemo_payload` and `status='Enriched'` (or writes to `fleet_errors` and sets `status='Shipwrecked'`).
+- Neptune receives a session_id, SELECTs `nemo_payload` from Postgres, calls Gemini for outreach synthesis, UPDATEs the row with `neptune_payload`, `outreach_bite`, and `status='Finished'`.
+- All Postgres reads and writes happen inside fleet-agents (server.js) via pg client over VPC. n8n never touches the database.
+- All AI logic, schema enforcement, and prompt behavior live in server.js. Never fix these in n8n nodes.
 
 **Campaigns:**
 
@@ -72,6 +79,6 @@ Three-agent AI pipeline for nightly lead discovery, forensic enrichment, and out
 5. Never use Gemini CLI for database operations. Use `gcloud sql connect` via Cloud Shell.
 6. Every prompt change stages in `campaign_staging_area.md` and tests in Agent Studio before going live.
 7. `SHIPWRECKED` leads write to `fleet_errors`, never halt the workflow.
-8. Session IDs are deterministic: `={{ 'lead_' + ($json.domain || $json.Company_Name).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() }}`
+8. Session IDs are generated server-side by Ahab: `'lead_' + company_name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()`. One session_id per unique company name. Duplicate company names from Ahab collide to the same session_id (intentional dedup — ON CONFLICT DO UPDATE).
 9. Never push `pipeline/` to a public repo. `framework/` only.
 10. Agent files are always current. Pair programming files are allowed to be historical.

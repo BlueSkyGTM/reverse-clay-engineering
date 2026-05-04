@@ -1,6 +1,17 @@
 import express from 'express';
 import { GoogleAuth } from 'google-auth-library';
 import fetch from 'node-fetch';
+import pkg from 'pg';
+const { Pool } = pkg;
+
+const pool = new Pool({
+  host: '10.5.1.3',
+  port: 5432,
+  database: 'nocodb_data',
+  user: 'fleet_app',
+  password: 'DeepWaterHubPipeline2026',
+  ssl: { rejectUnauthorized: false },
+});
 
 const app = express();
 app.use(express.json());
@@ -43,8 +54,6 @@ async function callGenerateContent(model, body) {
   }
 }
 
-// ── Ahab ─────────────────────────────────────────────────────────────────────
-
 const AHAB_SYSTEM = `[Task]: Your sole mission is RAW DATA HARVESTING of opportunities. You are the high-volume scraper at the front-end of the pipeline.
 [Persona]: Ahab, the Hunter.
 [Sub-Agents]:
@@ -52,10 +61,10 @@ const AHAB_SYSTEM = `[Task]: Your sole mission is RAW DATA HARVESTING of opportu
   - Signal Harpooner: Scans for growth and health keywords defined in campaign config.
 
 [Handoff_Protocol]:
-- Crucial: You are the "Find" stage. Nemo is the "Enrich" stage.
+- Crucial: You are the Find stage. Nemo is the Enrich stage.
 - Nemo will perform the deep-reasoning audit immediately after you deliver this payload.
 - Do not burn tokens on analysis. Give Nemo the maximum number of raw leads possible.
-- If the user provides a list of "Excluded Companies" in the prompt, DO NOT extract or return them. You must find net-new targets.
+- If the user provides a list of Excluded Companies in the prompt, DO NOT extract or return them.
 
 [Reasoning_Protocol]:
 - Execute 5+ varied search queries targeting the lead profile defined in campaign config.
@@ -63,20 +72,16 @@ const AHAB_SYSTEM = `[Task]: Your sole mission is RAW DATA HARVESTING of opportu
 
 [Core_Directives]:
 1. SOURCE FOCUS: Prioritize the source channels defined in campaign config.
-2. FILTER COMPLIANCE: Apply all global_filters from campaign config. Discard any lead that does not meet them.
-3. STRICT KEYWORD EXTRACTION: In Raw_Primary_Signals and Raw_Health_Signals, ONLY extract short phrases or keywords. Do not write full sentences.
-4. SEARCH ITERATION LOGIC:
-   - Execute a multi-step "Search Pivot."
-   - If a query yields low-signal results, immediately pivot to a new search branch.
-   - Every unique search query attempted MUST be logged as a standalone string in Harpooner_Logs.
-   - DO NOT repeat queries. Every log entry must represent a new attempt to find net-new leads.
+2. FILTER COMPLIANCE: Apply all global_filters from campaign config.
+3. STRICT KEYWORD EXTRACTION: In Raw_Primary_Signals and Raw_Health_Signals, ONLY extract short phrases or keywords.
+4. SEARCH ITERATION LOGIC: Execute a multi-step Search Pivot. Log every unique query in Harpooner_Logs.
 5. NO SUMMARIES: Do not explain your thought process in the logs.
-6. Fill the "Catch" array until the output token limit is reached.`;
+6. Fill the Catch array until the output token limit is reached.
+CRITICAL OUTPUT FORMAT: Return ONLY raw JSON. No markdown. No code fences. No backticks. Structure: {"Harpooner_Logs": ["query"], "Catch": [{"Company_Name": "string", "Job_URL": "string", "Location_Status": "string", "Raw_Primary_Signals": ["string"], "Raw_Health_Signals": ["string"]}]}`;
 
 app.post('/api/ahab', async (req, res) => {
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
-
   try {
     const result = await callGenerateContent('gemini-2.5-flash', {
       systemInstruction: { parts: [{ text: AHAB_SYSTEM }] },
@@ -85,171 +90,157 @@ app.post('/api/ahab', async (req, res) => {
       generationConfig: {
         temperature: 0.0,
         maxOutputTokens: 16384,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'object',
-          properties: {
-            Harpooner_Logs: { type: 'array', items: { type: 'string' } },
-            Catch: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  Company_Name: { type: 'string' },
-                  Job_URL: { type: 'string' },
-                  Location_Status: { type: 'string' },
-                  Raw_Primary_Signals: { type: 'array', items: { type: 'string' } },
-                  Raw_Health_Signals: { type: 'array', items: { type: 'string' } },
-                },
-                required: ['Company_Name', 'Job_URL', 'Location_Status'],
-              },
-            },
-          },
-          required: ['Harpooner_Logs', 'Catch'],
-        },
       },
     });
-    res.json(result);
+
+    let session_ids = [];
+    if (result.Catch && Array.isArray(result.Catch)) {
+      session_ids = await Promise.all(result.Catch.map(async (lead) => {
+        const company_name = lead.Company_Name || lead.company_name || 'unknown';
+        const session_id = 'lead_' + company_name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+
+        await pool.query(
+          `INSERT INTO gtm_career_leads (session_id, company_name, ahab_payload, direct_url, status) 
+           VALUES ($1, $2, $3, $4, 'Scraped') 
+           ON CONFLICT (session_id, company_name) 
+           DO UPDATE SET 
+             ahab_payload = EXCLUDED.ahab_payload,
+             status = 'Scraped'`,
+          [session_id, company_name, JSON.stringify(lead), lead.Job_URL || null]
+        );
+        return session_id;
+      }));
+    }
+
+    res.json({ session_ids, harpooner_logs: result.Harpooner_Logs || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── Nemo ──────────────────────────────────────────────────────────────────────
-
 const NEMO_SYSTEM = `[Task]: SINGLE-LEAD DIAGNOSTIC ENRICHMENT.
 [Persona]: Nemo, the Intelligence Analyst.
-[Mission]: Analyze ONE lead. Identify the friction or displacement signal relevant to the campaign's service intent. Produce a Clay-ready structured output.
+[Mission]: Analyze ONE lead. Identify the friction or displacement signal. Produce a Clay-ready structured output.
 
 [Clay_Readiness_Protocol]:
-Think through each field as if Clay will use it to run further enrichment downstream.
 - Every claim must be sourced. No invented details.
-- Direct_URL must be the company's own domain, not a job board or listing URL.
-- Contact_Recon must be a real person with a verifiable role, not a generic inbox.
-- Target_Service_Intent must be derived from evidence, not assumed.
+- Direct_URL must be the company own domain, not a job board.
+- Contact_Recon must be a real person with a verifiable role.
 
 [Target_Service_Intent_Routing]:
-Analyze the available data and route to the correct intent:
-- "Accounting": financial controllers, bookkeeping, reconciliation, QuickBooks spend signals, audit prep
-- "GTM": RevOps, lead generation, CRM operations, marketing automation, Clay or n8n workflows
+- Accounting: financial controllers, bookkeeping, reconciliation, QuickBooks spend signals
+- GTM: RevOps, lead generation, CRM operations, marketing automation, Clay or n8n workflows
 
 [Forensic_Dictionary]:
-1. API Stutter: Data tools exist but don't talk to each other — nothing flows automatically.
+1. API Stutter: Data tools exist but do not talk to each other.
 2. Scale Friction: Growth is outpacing data infrastructure capacity.
-3. Manual Data Debt: Humans doing work that should be structured or automated.
-4. Displacement Signal: Paying a platform, tool, or generalist for something a specialist does better.
+3. Manual Data Debt: Humans doing work that should be automated.
+4. Displacement Signal: Paying a platform for something a specialist does better.
 
-[CATALYST_STALE]:
-A company is real, reachable, and has friction signals -- but the capital catalyst is older than 18 months. Set status=SHIPWRECKED, reason_code=CATALYST_STALE. Do not route to Neptune.
+[CATALYST_STALE]: Company is real but capital catalyst is older than 18 months. Set status=SHIPWRECKED, reason_code=CATALYST_STALE.
 
-[The Divers]:
-1. URL Recon: Resolve to the company's direct domain. Reject redirects and listing pages.
-2. Health Check: Note funding, growth, or momentum signals if publicly available. Absence is never a disqualifier.
-3. Friction/Displacement Analyst: Apply the Forensic Dictionary. Identify the specific category. You MUST provide the URL that proves the technical or operational claim.
-
+[The Divers — be concise, one sentence max per field]:
+1. url_recon_notes: Confirm company direct domain. One sentence.
+2. health_audit_notes: Note funding or growth signal if found. One sentence.
+3. friction_notes: Name the friction category and one piece of evidence. One sentence.
 [Core_Directives]:
 - NO PROSE: Raw JSON only.
-- CITATION_MANDATE: No bracketed citations (e.g., [1], [2]) in any string values. Strip all inline citations before outputting.
-- Put ALL full URLs in the grounding_citations array.
-- PROOF_REQUIRED: Every technical or operational claim MUST have a corresponding proof URL.
-- CONTACT_RECON: Identify the decision-maker relevant to the campaign's service intent. Extract email pattern or LinkedIn profile.`;
+- CITATION_MANDATE: No bracketed citations in any string values.
+- PROOF_REQUIRED: Every technical claim MUST have a proof URL.
+- CONTACT_RECON: Identify the decision-maker. Extract email pattern or LinkedIn profile.}`;
 
 app.post('/api/nemo', async (req, res) => {
-  const { message } = req.body;
-  if (!message) return res.status(400).json({ error: 'message required' });
+  const { session_id: input_session_id } = req.body;
+  if (!input_session_id) return res.status(400).json({ error: 'session_id required' });
+
+  const leadRes = await pool.query('SELECT ahab_payload, company_name FROM gtm_career_leads WHERE session_id = $1 LIMIT 1', [input_session_id]);
+  if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
+  
+  const ahab_payload = leadRes.rows[0].ahab_payload;
+  if (!ahab_payload || Object.keys(ahab_payload).length === 0) return res.status(400).json({ error: 'empty ahab_payload' });
+  const message = JSON.stringify(ahab_payload);
 
   try {
     const result = await callGenerateContent('gemini-2.5-pro', {
       systemInstruction: { parts: [{ text: NEMO_SYSTEM }] },
       contents: [{ role: 'user', parts: [{ text: message }] }],
+      tools: [{ googleSearch: {} }],
       generationConfig: {
         temperature: 0.0,
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'object',
-          required: ['Nemo_Enrich_Audit', 'Diver_Audits', 'Enriched_Lead'],
-          properties: {
-            Nemo_Enrich_Audit: {
-              type: 'object',
-              required: ['status', 'reason_code', 'grounding_citations'],
-              properties: {
-                status: { type: 'string', enum: ['ENRICHED', 'SHIPWRECKED'] },
-                reason_code: { type: 'string', enum: ['SUCCESS', '404_STUTTER', 'DATA_THIN', 'CATALYST_STALE'] },
-                grounding_citations: { type: 'array', items: { type: 'string' } },
-              },
-            },
-            Diver_Audits: {
-              type: 'object',
-              required: ['url_recon_notes', 'health_audit_notes', 'friction_notes'],
-              properties: {
-                url_recon_notes: { type: 'string' },
-                health_audit_notes: { type: 'string' },
-                friction_notes: { type: 'string' },
-              },
-            },
-            Enriched_Lead: {
-              type: 'object',
-              properties: {
-                Company_Name: { type: 'string' },
-                Target_Service_Intent: { type: 'string' },
-                Primary_Stack: { type: 'array', items: { type: 'string' } },
-                Tech_Proof_URL: { type: 'string' },
-                funding_signal: { type: 'string' },
-                friction_type: { type: 'string', enum: ['API Stutter', 'Scale Friction', 'Manual Data Debt', 'Displacement Signal'] },
-                Contact_Recon: { type: 'string' },
-                Email: { type: 'string' },
-              },
-            },
-          },
-        },
+        maxOutputTokens: 4096,
       },
     });
-    res.json(result);
+
+    let parsedInput = {};
+    try { parsedInput = typeof message === 'string' ? JSON.parse(message) : message; } catch {}
+    const session_id = parsedInput.session_id || input_session_id || null;
+    const lead = result.Enriched_Lead || parsedInput || {};
+    const company_name = lead.Company_Name || parsedInput.Company_Name || null;
+
+    if (session_id) {
+      await pool.query(
+        `UPDATE gtm_career_leads 
+         SET nemo_payload = $1, 
+             direct_url = COALESCE($2, direct_url), 
+             target_service_intent = $3, 
+             contact_recon = $4,
+             status = 'Enriched'
+         WHERE session_id = $5`,
+        [JSON.stringify(result), lead.Direct_URL || null, lead.Target_Service_Intent || null, lead.Contact_Recon || null, session_id]
+      );
+    }
+
+    if (result?.Nemo_Enrich_Audit?.status === 'SHIPWRECKED') {
+      const reason_code = result.Nemo_Enrich_Audit.reason_code || null;
+      await pool.query('UPDATE gtm_career_leads SET status = \'Shipwrecked\' WHERE session_id = $1', [session_id]);
+      await pool.query('INSERT INTO fleet_errors (session_id, reason_code, company_name) VALUES ($1, $2, $3)', [session_id, reason_code, company_name]);
+      return res.json({ status: 'shipwrecked', reason_code });
+    }
+
+    res.json({ status: 'success', session_id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── Neptune ───────────────────────────────────────────────────────────────────
-
-const NEPTUNE_SYSTEM = `[Task]: ROBERT COLLIER OUTREACH SYNTHESIS.
+const NEPTUNE_SYSTEM = `[Task]: OUTREACH SYNTHESIS.
 [Persona]: Neptune, the Authority Engine.
-[Mission]: You receive a structured "Friction Profile" from Nemo. Synthesize it into a Robert Collier-style "Outreach Bite." One job. One output.
+[Mission]: Receive a structured Friction Profile from Nemo. Synthesize it into a Schwartz-style Outreach Bite. One job. One output.
 
 [Prime_Directive]:
 You are not selling. You are confirming what the prospect already knows.
 
 The Bite operates on three Schwartz principles:
-1. REFLECT before you claim. Name what they are already doing before offering anything. Their stack, their process, their friction — stated back at them with precision.
-2. NAME THE VILLAIN. Every prospect has one — the tool that breaks, the process that doesn't scale, the platform they're overpaying for. Name it specifically. Never generically.
-3. OFFER THE SPECIFIC OUTCOME. Not a feature. Not a capability. The exact thing they already want, stated in operational language.
+1. REFLECT before you claim. Name what they are already doing before offering anything.
+2. NAME THE VILLAIN. Name the specific tool, process, or platform that is failing them.
+3. OFFER THE SPECIFIC OUTCOME. The exact thing they already want, stated in operational language.
 
-The Bite is 3-4 sentences. It opens by reflecting their reality. It names the villain. It offers the specific outcome. It closes with one peer suggestion or question — never a generic call to action.
+The Bite is 3-4 sentences. Opens by reflecting reality. Names the villain. Offers the specific outcome. Closes with one peer suggestion — never a generic call to action.
 
 [The_Rule_of_One_Mandate]:
-1. One Reader: This is an intimate, 1-on-1 engagement between two professionals.
-2. First-Person ONLY: Speak strictly as an individual ("I"), NEVER as an agency or company ("We", "Our", "Us").
-3. One Peer Suggestion: End with an actual, actionable insight or suggestion based on their specific signals. No generic "solutions."
+1. One Reader: intimate 1-on-1 engagement.
+2. First-Person ONLY: I never We.
+3. One Peer Suggestion: actionable insight based on their specific signals.
 
 [Funding_Signal_Handling]:
-- If funding_signal is present and non-null: Open with it as a momentum hook. One short clause, then pivot to friction.
-- If funding_signal is null or absent: Omit entirely. Lead directly with the friction angle.
-
-[Friction_Interpretation]:
-1. API Stutter: Enter their mental conversation about disconnected systems.
-2. Scale Friction: Address their fear of breaking during growth.
-3. Manual Data Debt: Appeal to efficiency — orchestration eliminates copy-paste drag.
-4. Displacement Signal: Mirror the cost of what they are currently paying for vs. what a direct provider offers.
+- If funding_signal present: Open with it as a momentum hook. One short clause, then pivot to friction.
+- If funding_signal null: Omit entirely. Lead with friction.
 
 [Core_Directives]:
 - NO PROSE: Raw JSON only.
-- BITE_CONSTRAINT: Maximum 3-4 sentences. Punchy, telegraphic, authoritative.
-- DATA_STRICTNESS: Only reference what is in the input payload. Do not invent details.`;
+- BITE_CONSTRAINT: Maximum 3-4 sentences.
+- DATA_STRICTNESS: Only reference what is in the input payload.}`;
 
 app.post('/api/neptune', async (req, res) => {
-  const { message } = req.body;
-  if (!message) return res.status(400).json({ error: 'message required' });
+  const { session_id: input_session_id } = req.body;
+  if (!input_session_id) return res.status(400).json({ error: 'session_id required' });
+
+  const leadRes = await pool.query('SELECT nemo_payload, company_name FROM gtm_career_leads WHERE session_id = $1 LIMIT 1', [input_session_id]);
+  if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
+  
+  const nemo_payload = leadRes.rows[0].nemo_payload;
+  if (!nemo_payload || Object.keys(nemo_payload).length === 0) return res.status(400).json({ error: 'empty nemo_payload' });
+  const message = JSON.stringify(nemo_payload);
 
   try {
     const result = await callGenerateContent('gemini-2.5-pro', {
@@ -257,32 +248,49 @@ app.post('/api/neptune', async (req, res) => {
       contents: [{ role: 'user', parts: [{ text: message }] }],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 2048,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'object',
           required: ['Neptune_Log', 'Outreach_Bite'],
           properties: {
-            Neptune_Log: {
-              type: 'object',
-              properties: {
-                intent_recognized: { type: 'string' },
-                friction_strategy: { type: 'string' },
-                rule_of_one_check: { type: 'string' },
-              },
-            },
+            Neptune_Log: { type: 'object', properties: { intent_recognized: { type: 'string' }, friction_strategy: { type: 'string' }, rule_of_one_check: { type: 'string' } } },
             Outreach_Bite: { type: 'string' },
           },
         },
       },
     });
-    res.json(result);
+
+    let input = {};
+    try { input = typeof message === 'string' ? JSON.parse(message) : message; } catch {}
+    const lead = input.Enriched_Lead || input;
+    const session_id = input.session_id || input_session_id || null;
+    const company_name = lead.Company_Name || null;
+
+    if (session_id) {
+      await pool.query(
+        `UPDATE gtm_career_leads 
+         SET neptune_payload = $1, 
+             outreach_bite = $2,
+             friction_type = $3,
+             funding_signal = $4,
+             status = 'Finished'
+         WHERE session_id = $5`,
+        [
+          JSON.stringify(result), 
+          result.Outreach_Bite || null, 
+          lead.friction_type || null, 
+          lead.funding_signal || null, 
+          session_id
+        ]
+      );
+    }
+
+    res.json({ status: 'success', session_id, company_name });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ── Start ─────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Fleet agents listening on port ${PORT}`));
