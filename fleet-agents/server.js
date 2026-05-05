@@ -201,14 +201,15 @@ app.post('/api/ahab', async (req, res) => {
         const session_id = 'lead_' + company_name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 
         await pool.query(
-          `INSERT INTO gtm_career_leads (session_id, company_name, ahab_payload, direct_url, status)
-           VALUES ($1, $2, $3, $4, 'Scraped')
+          `INSERT INTO gtm_career_leads (session_id, company_name, ahab_payload, direct_url, job_url, status)
+           VALUES ($1, $2, $3, $4, $5, 'Scraped')
            ON CONFLICT (session_id, company_name)
            DO UPDATE SET
              ahab_payload = EXCLUDED.ahab_payload,
+             job_url = EXCLUDED.job_url,
              status = 'Scraped'
            WHERE gtm_career_leads.status = 'Scraped'`,
-          [session_id, company_name, JSON.stringify(lead), sanitizeDirectUrl(lead.Job_URL)]
+          [session_id, company_name, JSON.stringify(lead), sanitizeDirectUrl(lead.Job_URL), sanitizeDirectUrl(lead.Job_URL)]
         );
         return session_id;
       }));
@@ -303,6 +304,9 @@ app.post('/api/nemo', async (req, res) => {
     const lead = result.Enriched_Lead || parsedInput || {};
     const company_name = lead.Company_Name || parsedInput.Company_Name || null;
     const email = lead.Contact_Recon?.email || lead.contact_recon?.email || null;
+    const contact_name = result?.Enriched_Lead?.Contact_Recon?.name || null;
+    const contact_title = result?.Enriched_Lead?.Contact_Recon?.title || null;
+    const linkedin_url = result?.Enriched_Lead?.Contact_Recon?.linkedin || null;
 
     const divers = result?.Enriched_Lead?.The_Divers;
     if (divers) {
@@ -340,8 +344,11 @@ app.post('/api/nemo', async (req, res) => {
              funding_signal = COALESCE($8, funding_signal),
              url_recon_notes = COALESCE($9, url_recon_notes),
              health_audit_notes = COALESCE($10, health_audit_notes),
-             friction_notes = COALESCE($11, friction_notes)
-         WHERE session_id = $12`,
+             friction_notes = COALESCE($11, friction_notes),
+             contact_name = $12,
+             contact_title = $13,
+             linkedin_url = $14
+         WHERE session_id = $15`,
         [
           JSON.stringify(result),
           sanitizeDirectUrl(lead.Direct_URL),
@@ -354,6 +361,9 @@ app.post('/api/nemo', async (req, res) => {
           url_recon_notes,
           health_audit_notes,
           friction_notes_text,
+          contact_name,
+          contact_title,
+          linkedin_url,
           session_id
         ]
       );
@@ -393,6 +403,14 @@ The Bite is 3-4 sentences. Opens by reflecting reality. Names the villain. Offer
 [Funding_Signal_Handling]:
 - If funding_signal present: Open with it as a momentum hook. One short clause, then pivot to friction.
 - If funding_signal null: Omit entirely. Lead with friction.
+
+[Contact_Frame]:
+Write to the contact's specific role, not the job posting.
+- CTO or VP Engineering: frame around architecture debt and engineering overhead
+- VP Revenue or CRO: frame around pipeline visibility and revenue predictability
+- Head of Growth or CMO: frame around CAC efficiency and GTM velocity
+- RevOps or Operations title: frame around data integrity and workflow reliability
+- If title unknown: default to operational pain
 
 [Core_Directives]:
 - NO PROSE: Raw JSON only.
