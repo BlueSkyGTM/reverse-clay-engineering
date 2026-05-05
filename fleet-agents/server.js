@@ -54,6 +54,69 @@ async function callGenerateContent(model, body) {
   }
 }
 
+function extractFrictionType(payload) {
+  const lead = payload?.Enriched_Lead || payload || {};
+  const divers = lead.The_Divers || payload?.The_Divers || {};
+
+  // Potential sources in order of reliability
+  const candidates = [
+    lead.Forensic_Friction_Type,
+    lead.friction_type,
+    divers.friction_notes,
+    lead.friction_notes
+  ];
+
+  const forensicTerms = [
+    'API Stutter',
+    'Scale Friction',
+    'Manual Data Debt',
+    'Displacement Signal'
+  ];
+
+  const serviceIntents = ['GTM', 'Accounting'];
+
+  for (const val of candidates) {
+    if (typeof val !== 'string') continue;
+
+    // Check for exact forensic terms within the string
+    const found = forensicTerms.find(term => val.toLowerCase().includes(term.toLowerCase()));
+    if (found) return found;
+
+    // If it's just a service intent, ignore it to prevent "GTM" contamination
+    if (serviceIntents.some(intent => val.trim().toUpperCase() === intent)) continue;
+
+    // Fallback: if it's one of the forensic terms exactly
+    if (forensicTerms.includes(val.trim())) return val.trim();
+  }
+
+  return null;
+}
+
+function normalizeNemoPayload(payload) {
+  const email =
+    payload?.Contact_Recon?.email ||
+    payload?.Contact_Recon?.email_pattern ||
+    payload?.Contact_Recon?.email_pattern_guess ||
+    payload?.contact_recon?.email ||
+    payload?.contact_recon?.email_pattern ||
+    payload?.contact_recon?.email_pattern_guess ||
+    payload?.Enriched_Lead?.Contact_Recon?.email ||
+    payload?.email ||
+    null;
+
+  const contactRaw =
+    payload?.Contact_Recon ||
+    payload?.contact_recon ||
+    payload?.Enriched_Lead?.Contact_Recon ||
+    null;
+
+  return {
+    email,
+    contact_recon: contactRaw ? JSON.stringify(contactRaw) : null,
+    friction_type: extractFrictionType(payload)
+  };
+}
+
 const AHAB_SYSTEM = `[Task]: Your sole mission is RAW DATA HARVESTING of opportunities. You are the high-volume scraper at the front-end of the pipeline.
 [Persona]: Ahab, the Hunter.
 [Sub-Agents]:
@@ -100,10 +163,10 @@ app.post('/api/ahab', async (req, res) => {
         const session_id = 'lead_' + company_name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 
         await pool.query(
-          `INSERT INTO gtm_career_leads (session_id, company_name, ahab_payload, direct_url, status) 
-           VALUES ($1, $2, $3, $4, 'Scraped') 
-           ON CONFLICT (session_id, company_name) 
-           DO UPDATE SET 
+          `INSERT INTO gtm_career_leads (session_id, company_name, ahab_payload, direct_url, status)
+           VALUES ($1, $2, $3, $4, 'Scraped')
+           ON CONFLICT (session_id, company_name)
+           DO UPDATE SET
              ahab_payload = EXCLUDED.ahab_payload,
              status = 'Scraped'`,
           [session_id, company_name, JSON.stringify(lead), lead.Job_URL || null]
@@ -155,7 +218,7 @@ app.post('/api/nemo', async (req, res) => {
 
   const leadRes = await pool.query('SELECT ahab_payload, company_name FROM gtm_career_leads WHERE session_id = $1 LIMIT 1', [input_session_id]);
   if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
-  
+
   const ahab_payload = leadRes.rows[0].ahab_payload;
   if (!ahab_payload || Object.keys(ahab_payload).length === 0) return res.status(400).json({ error: 'empty ahab_payload' });
   const message = JSON.stringify(ahab_payload);
@@ -176,17 +239,30 @@ app.post('/api/nemo', async (req, res) => {
     const session_id = parsedInput.session_id || input_session_id || null;
     const lead = result.Enriched_Lead || parsedInput || {};
     const company_name = lead.Company_Name || parsedInput.Company_Name || null;
+    const email = lead.Contact_Recon?.email || lead.contact_recon?.email || null;
+    const friction_type = extractFrictionType(result);
 
     if (session_id) {
       await pool.query(
-        `UPDATE gtm_career_leads 
-         SET nemo_payload = $1, 
-             direct_url = COALESCE($2, direct_url), 
-             target_service_intent = $3, 
+        `UPDATE gtm_career_leads
+         SET nemo_payload = $1,
+             direct_url = COALESCE($2, direct_url),
+             target_service_intent = $3,
              contact_recon = $4,
-             status = 'Enriched'
-         WHERE session_id = $5`,
-        [JSON.stringify(result), lead.Direct_URL || null, lead.Target_Service_Intent || null, lead.Contact_Recon || null, session_id]
+             status = $5,
+             email = $6,
+             friction_type = $7
+         WHERE session_id = $8`,
+        [
+          JSON.stringify(result),
+          lead.Direct_URL || null,
+          lead.Target_Service_Intent || null,
+          lead.Contact_Recon || null,
+          'Enriched',
+          email,
+          friction_type,
+          session_id
+        ]
       );
     }
 
@@ -229,7 +305,8 @@ The Bite is 3-4 sentences. Opens by reflecting reality. Names the villain. Offer
 [Core_Directives]:
 - NO PROSE: Raw JSON only.
 - BITE_CONSTRAINT: Maximum 3-4 sentences.
-- DATA_STRICTNESS: Only reference what is in the input payload.}`;
+- DATA_STRICTNESS: Only reference what is in the input payload.
+- VOICE_CONSTRAINT: Never imply an existing client relationship or consulting history. Frame all peer suggestions as pattern recognition, not client experience. Write "the move that tends to work here" not "founders I work with" or "peers in your position."}`;
 
 app.post('/api/neptune', async (req, res) => {
   const { session_id: input_session_id } = req.body;
@@ -237,8 +314,9 @@ app.post('/api/neptune', async (req, res) => {
 
   const leadRes = await pool.query('SELECT nemo_payload, company_name FROM gtm_career_leads WHERE session_id = $1 LIMIT 1', [input_session_id]);
   if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
-  
+
   const nemo_payload = leadRes.rows[0].nemo_payload;
+  const { email, contact_recon, friction_type: nemo_friction_type } = normalizeNemoPayload(nemo_payload);
   if (!nemo_payload || Object.keys(nemo_payload).length === 0) return res.status(400).json({ error: 'empty nemo_payload' });
   const message = JSON.stringify(nemo_payload);
 
@@ -269,18 +347,22 @@ app.post('/api/neptune', async (req, res) => {
 
     if (session_id) {
       await pool.query(
-        `UPDATE gtm_career_leads 
-         SET neptune_payload = $1, 
+        `UPDATE gtm_career_leads
+         SET neptune_payload = $1,
              outreach_bite = $2,
-             friction_type = $3,
+             friction_type = COALESCE($3, friction_type),
              funding_signal = $4,
+             email = $5,
+             contact_recon = $6,
              status = 'Finished'
-         WHERE session_id = $5`,
+         WHERE session_id = $7`,
         [
-          JSON.stringify(result), 
-          result.Outreach_Bite || null, 
-          lead.friction_type || null, 
-          lead.funding_signal || null, 
+          JSON.stringify(result),
+          result.Outreach_Bite || null,
+          nemo_friction_type,
+          lead.funding_signal || null,
+          email,
+          contact_recon,
           session_id
         ]
       );
