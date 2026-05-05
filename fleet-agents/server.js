@@ -138,6 +138,17 @@ function normalizeNemoPayload(payload) {
   };
 }
 
+function sanitizeDirectUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  if (url.includes('vertexaisearch') || url.includes('grounding-api-redirect')) return null;
+  return url;
+}
+
+function stripCitations(val) {
+  if (typeof val !== 'string') return val;
+  return val.replace(/\[\d+(?:,\s*\d+)*\]/g, '').trim();
+}
+
 const AHAB_SYSTEM = `[Task]: Your sole mission is RAW DATA HARVESTING of opportunities. You are the high-volume scraper at the front-end of the pipeline.
 [Persona]: Ahab, the Hunter.
 [Sub-Agents]:
@@ -216,6 +227,7 @@ const NEMO_SYSTEM = `[Task]: SINGLE-LEAD DIAGNOSTIC ENRICHMENT.
 [Clay_Readiness_Protocol]:
 - Every claim must be sourced. No invented details.
 - Direct_URL must be the company own domain, not a job board.
+- Direct_URL must be the company's own domain, confirmed by direct navigation. Return null if it cannot be independently verified.
 - Contact_Recon must be a real person with a verifiable role.
 
 [Target_Service_Intent_Routing]:
@@ -228,7 +240,7 @@ const NEMO_SYSTEM = `[Task]: SINGLE-LEAD DIAGNOSTIC ENRICHMENT.
 3. Manual Data Debt: Humans doing work that should be automated.
 4. Displacement Signal: Paying a platform for something a specialist does better.
 
-[CATALYST_STALE]: Company is real but capital catalyst is older than 18 months. Set status=SHIPWRECKED, reason_code=CATALYST_STALE.
+[CATALYST_STALE]: If the most recent funding event is older than 18 months from today, you MUST set status=SHIPWRECKED and reason_code=CATALYST_STALE. No exceptions. Return immediately after writing SHIPWRECKED status.
 
 [The Divers — be concise, one sentence max per field]:
 1. url_recon_notes: Confirm company direct domain. One sentence.
@@ -237,7 +249,7 @@ const NEMO_SYSTEM = `[Task]: SINGLE-LEAD DIAGNOSTIC ENRICHMENT.
 
 [Core_Directives]:
 - NO PROSE: Raw JSON only.
-- CITATION_MANDATE: No bracketed citations in any string values.
+- CITATION_MANDATE: All string values must be plain prose only. No reference markers of any kind.
 - PROOF_REQUIRED: Every technical claim MUST have a proof URL.
 - CONTACT_RECON: Identify the decision-maker. Extract email pattern or LinkedIn profile.
 
@@ -251,6 +263,7 @@ OUTPUT CONTRACT:
     "funding_signal": "string | null",
     "Contact_Recon": { "name": "string", "title": "string", "email": "string | null", "linkedin": "string | null" },
     "The_Divers": { "url_recon_notes": "string", "health_audit_notes": "string", "friction_notes": "string" }
+    // All string values must be plain prose only. No reference markers of any kind.
   },
   "Nemo_Enrich_Audit": { "status": "ACTIVE | SHIPWRECKED", "reason_code": "string | null" }
 }`;
@@ -273,7 +286,7 @@ app.post('/api/nemo', async (req, res) => {
       tools: [{ googleSearch: {} }],
       generationConfig: {
         temperature: 0.0,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
       },
     });
 
@@ -283,8 +296,19 @@ app.post('/api/nemo', async (req, res) => {
     const lead = result.Enriched_Lead || parsedInput || {};
     const company_name = lead.Company_Name || parsedInput.Company_Name || null;
     const email = lead.Contact_Recon?.email || lead.contact_recon?.email || null;
-    const friction_type = extractFrictionType(result);
-    const nemo_funding_signal = result?.Enriched_Lead?.funding_signal || null;
+
+    const divers = result?.Enriched_Lead?.The_Divers;
+    if (divers) {
+      if (divers.url_recon_notes) divers.url_recon_notes = stripCitations(divers.url_recon_notes);
+      if (divers.health_audit_notes) divers.health_audit_notes = stripCitations(divers.health_audit_notes);
+      if (divers.friction_notes) divers.friction_notes = stripCitations(divers.friction_notes);
+    }
+    const url_recon_notes = divers?.url_recon_notes || null;
+    const health_audit_notes = divers?.health_audit_notes || null;
+    const friction_notes_text = divers?.friction_notes || null;
+
+    const friction_type = stripCitations(extractFrictionType(result)) || null;
+    const nemo_funding_signal = stripCitations(result?.Enriched_Lead?.funding_signal || null) || null;
 
     if (result?.Nemo_Enrich_Audit?.status === 'SHIPWRECKED') {
       const reason_code = result.Nemo_Enrich_Audit.reason_code || null;
@@ -293,7 +317,7 @@ app.post('/api/nemo', async (req, res) => {
         [JSON.stringify(result), session_id]
       );
       await pool.query('INSERT INTO fleet_errors (session_id, reason_code, company_name) VALUES ($1, $2, $3)', [session_id, reason_code, company_name]);
-      return res.json({ status: 'shipwrecked', reason_code });
+      return res.json({ status: 'shipwrecked', reason_code, session_id });
     }
 
     if (session_id) {
@@ -306,17 +330,23 @@ app.post('/api/nemo', async (req, res) => {
              status = $5,
              email = $6,
              friction_type = $7,
-             funding_signal = COALESCE($8, funding_signal)
-         WHERE session_id = $9`,
+             funding_signal = COALESCE($8, funding_signal),
+             url_recon_notes = COALESCE($9, url_recon_notes),
+             health_audit_notes = COALESCE($10, health_audit_notes),
+             friction_notes = COALESCE($11, friction_notes)
+         WHERE session_id = $12`,
         [
           JSON.stringify(result),
-          lead.Direct_URL || null,
+          sanitizeDirectUrl(lead.Direct_URL),
           lead.Target_Service_Intent || null,
           lead.Contact_Recon || null,
           'Enriched',
           email,
           friction_type,
           nemo_funding_signal,
+          url_recon_notes,
+          health_audit_notes,
+          friction_notes_text,
           session_id
         ]
       );
@@ -361,7 +391,7 @@ The Bite is 3-4 sentences. Opens by reflecting reality. Names the villain. Offer
 - NO PROSE: Raw JSON only.
 - BITE_CONSTRAINT: Maximum 3-4 sentences.
 - DATA_STRICTNESS: Only reference what is in the input payload.
-- VOICE_CONSTRAINT: Write in the voice of someone who spent 200 hours studying GTM failure patterns in public job postings and LinkedIn signals — not a consultant with clients. NEVER write "founders I work with", "peers in your position", "clients I advise", "my research focuses on", or any phrase implying an existing client base or consulting practice. You observed this pattern. You did not advise on it.}`;
+- VOICE_CONSTRAINT: Write as someone who has spent 200 hours studying GTM failure patterns from job postings and LinkedIn signals. Every observation comes from pattern recognition across hundreds of postings, not personal client work. State what you observed. Do not reference the act of observing.}`;
 
 app.post('/api/neptune', async (req, res) => {
   const { session_id: input_session_id } = req.body;
@@ -381,7 +411,7 @@ app.post('/api/neptune', async (req, res) => {
       contents: [{ role: 'user', parts: [{ text: message }] }],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'object',
@@ -426,6 +456,80 @@ app.post('/api/neptune', async (req, res) => {
     }
 
     res.json({ status: 'success', session_id, company_name });
+  } catch (err) {
+    try {
+      await pool.query(
+        'INSERT INTO fleet_errors (session_id, reason_code, company_name) VALUES ($1, $2, $3)',
+        [input_session_id, 'NEPTUNE_FAILURE', leadRes.rows[0].company_name || null]
+      );
+    } catch {}
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/reprocess', async (req, res) => {
+  const { session_id: input_session_id } = req.body;
+  if (!input_session_id) return res.status(400).json({ error: 'session_id required' });
+
+  const leadRes = await pool.query('SELECT nemo_payload, company_name FROM gtm_career_leads WHERE session_id = $1 LIMIT 1', [input_session_id]);
+  if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
+
+  const nemo_payload = leadRes.rows[0].nemo_payload;
+  if (!nemo_payload || Object.keys(nemo_payload).length === 0) return res.status(400).json({ error: 'empty nemo_payload' });
+  const { email, contact_recon, friction_type: nemo_friction_type } = normalizeNemoPayload(nemo_payload);
+  const message = JSON.stringify(nemo_payload);
+
+  try {
+    const result = await callGenerateContent('gemini-2.5-pro', {
+      systemInstruction: { parts: [{ text: NEPTUNE_SYSTEM }] },
+      contents: [{ role: 'user', parts: [{ text: message }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          required: ['Neptune_Log', 'Outreach_Bite', 'funding_signal'],
+          properties: {
+            Neptune_Log: { type: 'object', properties: { intent_recognized: { type: 'string' }, friction_strategy: { type: 'string' }, rule_of_one_check: { type: 'string' } } },
+            Outreach_Bite: { type: 'string' },
+            funding_signal: { type: 'string', nullable: true },
+          },
+        },
+      },
+    });
+
+    let input = {};
+    try { input = typeof message === 'string' ? JSON.parse(message) : message; } catch {}
+    const lead = input.Enriched_Lead || input;
+    const session_id = input_session_id || null;
+    const company_name = lead.Company_Name || null;
+    const funding_signal = result.funding_signal ?? extractFundingSignal(input);
+
+    if (session_id) {
+      await pool.query(
+        `UPDATE gtm_career_leads
+         SET neptune_payload = $1,
+             outreach_bite = $2,
+             friction_type = COALESCE($3, friction_type),
+             funding_signal = $4,
+             email = $5,
+             contact_recon = $6,
+             status = 'Finished'
+         WHERE session_id = $7`,
+        [
+          JSON.stringify(result),
+          result.Outreach_Bite || null,
+          nemo_friction_type,
+          funding_signal,
+          email,
+          contact_recon,
+          session_id
+        ]
+      );
+    }
+
+    res.json({ status: 'reprocessed', session_id, company_name });
   } catch (err) {
     try {
       await pool.query(
