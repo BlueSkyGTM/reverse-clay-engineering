@@ -2,13 +2,11 @@
 
 > Authored by GPT-4o-mini via proxy
 
-This guide covers importing and operating the two non-Hunt workflow variants: bulk enrichment and re-enrichment. For the standard Hunt workflow, see WORKFLOW_BUILDER.md.
+This guide covers importing and operating workflow JSONs. For workflow construction, see WORKFLOW_BUILDER.md.
 
 ---
 
 ## 1. How to Import a Workflow into n8n
-
-Applies to both `workflow_bulk_v1.json` and `workflow_reenrich_v1.json`.
 
 1. Log in to your n8n instance.
 2. In the left sidebar, click **Workflows**.
@@ -18,11 +16,9 @@ Applies to both `workflow_bulk_v1.json` and `workflow_reenrich_v1.json`.
 6. Review the node preview, then click **Save**.
 7. Set the workflow to **Inactive** until you have tested it manually.
 
-Repeat for the second workflow if importing both.
-
 ---
 
-## 2. workflow_bulk_v1.json — GTM Bulk Enrichment
+## 2. workflow_bulk_v1.json — Bulk Enrichment
 
 **Purpose:** Enrich a manually provided list of companies. You supply the companies; the pipeline seeds them into Postgres and runs full Nemo → Neptune enrichment.
 
@@ -55,31 +51,7 @@ Click the **Execute Workflow** button (play icon, top right of canvas). Do not w
 
 ---
 
-## 3. workflow_reenrich_v1.json — GTM Career Re-Enrichment
-
-**Purpose:** Re-run Nemo and Neptune on existing leads in `gtm_career_leads` that completed enrichment before contact columns were added. Targets leads where `status = 'Finished'` and `contact_name IS NULL`. No input required.
-
-**Node chain:**
-```
-Engine_Ignition → Fetch_Requeue_IDs → Parse_Session_IDs → Nemo_Fleet_Call → Neptune_Fleet_Call
-```
-
-**Schedule:** Sunday 6AM (can be triggered manually at any time).
-
-### When to run it
-
-- After adding new columns to the schema (e.g. `contact_name`, `job_title`) — re-enrichment backfills those columns on existing rows.
-- Any time you notice `Finished` leads with blank contact fields in Retool.
-
-### Trigger manually
-
-1. Open `workflow_reenrich_v1` in n8n.
-2. Click **Execute Workflow**. No node editing required — the `/api/requeue` endpoint finds eligible leads automatically (up to 50 per run).
-3. If more than 50 leads need backfilling, run it multiple times until the queue is empty.
-
----
-
-## 4. Verifying a Successful Run
+## 3. Verifying a Successful Run
 
 ### In n8n
 
@@ -98,16 +70,6 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
-**For re-enrichment** — rows that had `contact_name IS NULL` should now be populated:
-
-```sql
-SELECT company_name, contact_name, contact_title, linkedin_url, status
-FROM gtm_career_leads
-WHERE contact_name IS NOT NULL
-ORDER BY created_at DESC
-LIMIT 20;
-```
-
 **Check for failures:**
 
 ```sql
@@ -116,12 +78,41 @@ SELECT * FROM fleet_errors ORDER BY occurred_at DESC LIMIT 20;
 
 ---
 
-## 5. Common Mistakes
+## 4. Common Mistakes
 
 | Mistake | Consequence | Fix |
 |---|---|---|
 | Forgetting to populate `Set_Bulk_Input` before running bulk | `/api/seed` receives empty array, returns no session_ids, workflow exits with zero output | Always edit and save the node before executing |
 | Not saving after editing a node | n8n discards edits on next load | Hit Save after every node change |
-| Running re-enrichment when queue is already empty | `/api/requeue` returns `[]`, workflow exits cleanly with no output — not an error | Check Retool first; if all leads have contact_name, nothing to do |
-| Activating the schedule before testing manually | Untested workflow fires at 3AM or 6AM and fails silently | Execute manually first, confirm green ticks, then activate |
+| Activating the schedule before testing manually | Untested workflow fires at 3AM and fails silently | Execute manually first, confirm green ticks, then activate |
 | Importing JSON without verifying the fleet-agents URL | Requests go to wrong endpoint if URL changed | Confirm each HTTP Request node points to `https://fleet-agents-954265623326.us-central1.run.app` after import |
+
+---
+
+## 5. How to Swap Search Terms for Career Hunt and Upwork Hunt Workflows
+
+> Proxy: chatcmpl-DcPBHvP0ZaZLqB1kvSAeOFaJ5PMrv | gpt-4o-mini-2024-07-18
+
+**Node to edit:** `Set_Campaign_Message` — node 2 in the chain (after `Engine_Ignition`).
+
+**What the field contains:** The `campaign_message` assignment holds a plain English string passed directly to Ahab. It contains the campaign name, role types, company profile, tech signals, and filters. Everything Ahab uses to search is in this one string.
+
+**How to update safely:**
+1. Open the workflow in n8n and click **Set_Campaign_Message**.
+2. In the Properties panel, locate the `campaign_message` assignment value field.
+3. Edit only the string value. Do not rename the assignment (`campaign_message`), do not change the node name, do not touch any other node.
+4. Click **Save** before closing.
+
+**Before / after example — swapping role types:**
+
+Before:
+```
+Campaign: GTM Career Hunt. Search for remote RevOps, MarOps, GTM Engineering, Marketing Automation roles at Series A/B B2B SaaS companies. Tech signals: n8n, Clay, HubSpot, Zapier, Salesforce. Remote only. Active listings only. Return maximum leads.
+```
+
+After (adding Sales Engineer, removing MarOps):
+```
+Campaign: GTM Career Hunt. Search for remote RevOps, GTM Engineering, Sales Engineering, Marketing Automation roles at Series A/B B2B SaaS companies. Tech signals: n8n, Clay, HubSpot, Zapier, Salesforce. Remote only. Active listings only. Return maximum leads.
+```
+
+Nothing else in the workflow changes. All routing, enrichment, and outreach logic lives in server.js — the workflow is just a trigger.
