@@ -1,0 +1,15 @@
+services:
+  n8n:
+    build:
+      context: .
+      dockerfile: Dockerfile.n8n
+    environment:
+      - N8N_BLOCK_PYTHON_CODE_EXECUTION=false
+      - N8N_PYTHON_BINARY=/usr/bin/python3
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:

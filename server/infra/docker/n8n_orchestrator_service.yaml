@@ -1,0 +1,16 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: n8n-orchestrator
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    spec:
+      containers:
+      - image: gcr.io/project-8bd530c5-c699-4b50-868/n8n-python
+        env:
+        - name: N8N_BLOCK_PYTHON_CODE_EXECUTION
+          value: "false"
+        - name: N8N_PYTHON_BINARY
+          value: "/usr/bin/python3"
