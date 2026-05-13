@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raymond Fenton — RevOps · MarOps · Clay Systems</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0A0A0A;
+  --surface: #111111;
+  --surface2: #161616;
+  --border: #1E1E1E;
+  --border2: #2A2A2A;
+  --text: #E6E6E6;
+  --text-soft: #B8B8B8;
+  --muted: #6A6A6A;
+  --dim: #2E2E2E;
+  --accent: #B9E36A;
+  --red: #FF5555;
+  --white: #FFFFFF;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  font-feature-settings: "ss01", "ss02";
+}
+
+/* GRAIN — pulled way back */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+}
+
+/* Type primitives — mono is reserved for technical artifacts only */
+.mono { font-family: 'IBM Plex Mono', monospace; }
+.serif { font-family: 'Newsreader', 'Source Serif Pro', Georgia, serif; }
+
+/* NAV */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  height: 60px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,10,10,0.92);
+  backdrop-filter: blur(16px);
+}
+
+.nav-id {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  font-weight: 500;
+}
+.nav-id .sub { color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+.nav-right { display: flex; align-items: center; gap: 32px; }
+
+.nav-links {
+  display: flex;
+  gap: 28px;
+  list-style: none;
+}
+.nav-links a {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--text); }
+a:focus-visible,
+button:focus-visible,
+.term-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.nav-contact {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  padding: 8px 18px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+  transition: all 0.18s;
+}
+.nav-contact:hover { background: var(--accent); color: var(--bg); }
+
+/* ══════════════════════════════════════
+   STAGE 1 — HERO  (tightened)
+   ══════════════════════════════════════ */
+.hero {
+  min-height: 86vh;
+  padding: 130px 48px 96px;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.22;
+  pointer-events: none;
+}
+.hero-grid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 75% 65% at 50% 100%, var(--bg) 30%, transparent 100%);
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+}
+
+.hero-pre {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hero-pre::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.hero-h1 {
+  font-family: 'Newsreader', serif;
+  font-size: clamp(56px, 7.4vw, 108px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  font-weight: 400;
+  margin-bottom: 40px;
+  max-width: 16ch;
+  font-optical-sizing: auto;
+}
+.hero-h1 em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--accent);
+}
+.hero-h1 .faded { color: var(--text-soft); }
+
+.hero-sub {
+  font-size: 18px;
+  color: var(--text);
+  line-height: 1.6;
+  max-width: 620px;
+  margin-bottom: 44px;
+  font-weight: 300;
+  letter-spacing: -0.005em;
+}
+.hero-sub .em { color: var(--accent); font-weight: 400; }
+
+.hero-btns {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-a {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  padding: 14px 24px;
+  background: var(--accent);
+  color: var(--bg);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-a:hover { opacity: 0.85; }
+
+.btn-b {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  padding: 14px 24px;
+  border: 1px solid var(--border2);
+  color: var(--text);
+  text-decoration: none;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-b:hover { border-color: var(--muted); }
+
+/* TICKER */
+.ticker {
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+.ticker-track {
+  display: flex;
+  animation: scroll 36s linear infinite;
+  white-space: nowrap;
+}
+.ticker-item {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0.04em;
+}
+.ticker-item b { color: var(--accent); font-weight: 500; }
+.ticker-sep { color: var(--dim); }
+@keyframes scroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+
+/* ══════════════════════════════════════
+   STAT BAR — numbers now dominant
+   ══════════════════════════════════════ */
+.stat-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--border);
+}
+
+.stat-cell {
+  padding: 56px 40px 48px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.stat-cell:last-child { border-right: none; }
+
+.stat-n {
+  font-family: 'Newsreader', serif;
+  font-size: clamp(72px, 8vw, 116px);
+  font-weight: 300;
+  color: var(--white);
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  font-optical-sizing: auto;
+}
+.stat-n small {
+  font-size: 0.45em;
+  color: var(--accent);
+  font-weight: 400;
+  vertical-align: top;
+  margin-right: 2px;
+  letter-spacing: 0;
+}
+
+.stat-d {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text-soft);
+  line-height: 1.5;
+  font-weight: 400;
+  max-width: 220px;
+}
+.stat-d b { color: var(--text); font-weight: 500; display: block; margin-bottom: 2px; }
+
+/* ══════════════════════════════════════
+   STAGE 2 — PEAK
+   ══════════════════════════════════════ */
+.peak {
+  padding: 120px 48px 96px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.section-label::before {
+  content: attr(data-num);
+  color: var(--text-soft);
+  font-weight: 400;
+}
+
+.peak-h2, .process-h2, .about-h2, .contact-h2 {
+  font-family: 'Newsreader', serif;
+  font-weight: 400;
+  font-size: clamp(44px, 5vw, 76px);
+  line-height: 1.0;
+  letter-spacing: -0.03em;
+  margin-bottom: 32px;
+  max-width: 18ch;
+  font-optical-sizing: auto;
+}
+.peak-h2, .process-h2, .about-h2, .contact-h2 { font-size: clamp(44px, 5vw, 76px); }
+.peak-h2 em { font-style: normal; font-weight: 500; color: var(--accent); }
+
+.peak-lead {
+  font-size: 17px;
+  color: var(--text);
+  max-width: 640px;
+  line-height: 1.6;
+  margin-bottom: 64px;
+  font-weight: 300;
+  letter-spacing: -0.005em;
+}
+.peak-lead .muted { color: var(--text-soft); }
+.peak-lead .em { color: var(--accent); }
+
+/* INTELLIGENCE TERMINAL */
+.terminal {
+  border: 1px solid var(--border2);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 40px 120px rgba(0,0,0,0.4);
+}
+
+.term-bar {
+  display: flex;
+  align-items: center;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  gap: 8px;
+}
+.td { width: 10px; height: 10px; border-radius: 50%; }
+.td-r { background: #FF5F57; }
+.td-y { background: #FFBD2E; }
+.td-g { background: #28C840; }
+
+.term-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  margin: 0 auto;
+  letter-spacing: 0.04em;
+}
+
+.term-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  height: 480px;
+}
+
+.term-list {
+  overflow: auto;
+  border-right: 1px solid var(--border);
+}
+.term-list::-webkit-scrollbar { width: 4px; }
+.term-list::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.term-head {
+  display: grid;
+  grid-template-columns: 140px 150px 130px 130px 110px 120px 96px 86px;
+  min-width: 1010px;
+  gap: 14px;
+  padding: 11px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  position: sticky;
+  top: 0;
+}
+.term-head span {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.term-row {
+  display: grid;
+  grid-template-columns: 140px 150px 130px 130px 110px 120px 96px 86px;
+  min-width: 1010px;
+  gap: 14px;
+  padding: 15px 24px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+  align-items: center;
+}
+.term-row:hover { background: var(--surface2); }
+.term-row.on {
+  background: rgba(185,227,106,0.06);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.tr-co {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.tr-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tr-name b { color: var(--text); font-weight: 500; }
+
+.tr-cell {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tr-cell.good { color: var(--text); }
+.tr-cell.empty { color: var(--dim); }
+
+.tr-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  padding: 4px 8px;
+  display: inline-block;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(185,227,106,0.35);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.tr-fund {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tr-fund.empty { color: var(--dim); }
+
+.tr-status {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--accent);
+  text-align: right;
+  letter-spacing: 0.08em;
+}
+.tr-status.warn { color: #d6b44c; }
+
+/* DETAIL */
+.term-detail {
+  padding: 22px;
+  overflow-y: auto;
+  background: var(--surface2);
+}
+.term-detail::-webkit-scrollbar { width: 4px; }
+.term-detail::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.dl {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 18px 0 6px;
+}
+.dl:first-child { margin-top: 0; }
+
+.dv {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.dv .small { color: var(--muted); font-size: 12px; }
+.dv a { color: var(--accent); text-decoration: none; }
+.dv a:hover { text-decoration: underline; }
+
+.d-fund {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  background: rgba(185,227,106,0.05);
+  border: 1px solid rgba(185,227,106,0.18);
+  padding: 8px 11px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.d-bite {
+  font-family: 'Newsreader', serif;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.55;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.025);
+  border-left: 2px solid var(--accent);
+  font-style: italic;
+  font-weight: 300;
+  margin-top: 4px;
+}
+
+/* ══════════════════════════════════════
+   STAGE 3 — PROCESS (token comparison promoted)
+   ══════════════════════════════════════ */
+.process {
+  padding: 120px 48px 96px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* unified h2 sizing handled above */
+.process-h2 em { font-style: normal; font-weight: 500; color: var(--accent); }
+
+.process-lead {
+  font-size: 17px;
+  color: var(--text);
+  max-width: 600px;
+  line-height: 1.6;
+  margin-bottom: 72px;
+  font-weight: 300;
+  letter-spacing: -0.005em;
+}
+.process-lead .muted { color: var(--text-soft); }
+
+/* PRIMARY EVIDENCE — Before / After */
+.evidence-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.evidence-eyebrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.evidence-eyebrow b { color: var(--accent); font-weight: 500; }
+
+.token-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border2);
+  border: 1px solid var(--border2);
+  margin-bottom: 80px;
+}
+
+.tc-side {
+  background: var(--bg);
+  padding: 36px 36px 40px;
+  position: relative;
+}
+.tc-side.after { background: #0d0f08; }
+
+.tc-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tc-tag.before { color: var(--red); }
+.tc-tag.after { color: var(--accent); }
+.tc-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.tc-headline {
+  font-family: 'Newsreader', serif;
+  font-size: 56px;
+  font-weight: 300;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  margin-bottom: 6px;
+  font-optical-sizing: auto;
+}
+.tc-side.before .tc-headline { color: var(--red); }
+.tc-side.after .tc-headline { color: var(--accent); }
+.tc-headline .unit { font-size: 0.45em; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+
+.tc-sub {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 28px;
+}
+
+.tc-code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  line-height: 2;
+  color: var(--muted);
+  padding-top: 22px;
+  border-top: 1px solid var(--border2);
+}
+.tc-code .node { color: var(--text); }
+.tc-code .arrow { color: var(--dim); padding: 0 6px; }
+.tc-code .bad { color: var(--red); }
+.tc-code .good { color: var(--accent); }
+
+.tc-bullets {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tc-bullet {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+.tc-bullet::before {
+  content: '';
+  width: 4px; height: 4px;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+.tc-side.before .tc-bullet::before { background: var(--red); }
+.tc-side.after .tc-bullet::before { background: var(--accent); }
+
+/* Decisions — now supporting evidence */
+.decisions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 56px;
+}
+
+.decision {
+  background: var(--bg);
+  padding: 36px 32px;
+  transition: background 0.2s;
+}
+.decision:hover { background: var(--surface2); }
+
+.dec-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text-soft);
+  letter-spacing: 0.16em;
+  margin-bottom: 24px;
+}
+
+.dec-q {
+  font-family: 'Newsreader', serif;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 14px;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.dec-a {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: var(--text-soft);
+  line-height: 1.65;
+  font-weight: 300;
+}
+.dec-a strong { color: var(--accent); font-weight: 500; }
+
+/* FLOW DIAGRAM */
+.flow-wrap {
+  border: 1px solid var(--border);
+  padding: 32px 36px;
+  background: var(--bg);
+}
+
+.flow-caption {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 22px;
+}
+
+.flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 22px;
+}
+
+.flow-node {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  padding: 9px 16px;
+  border: 1px solid var(--border2);
+  color: var(--text);
+  white-space: nowrap;
+  background: var(--surface);
+}
+.flow-node.warm { border-color: rgba(185,227,106,0.35); color: var(--accent); }
+
+.flow-arrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--dim);
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+
+.flow-note {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 2;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.flow-note .comment { color: var(--dim); }
+
+/* ══════════════════════════════════════
+   STAGE 4 — ABOUT
+   ══════════════════════════════════════ */
+.about {
+  padding: 120px 48px 96px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 96px;
+  align-items: start;
+}
+
+/* unified h2 sizing handled above */
+.about-h2 em { font-style: normal; font-weight: 500; color: var(--accent); }
+
+.about-body {
+  font-size: 16px;
+  color: var(--text);
+  line-height: 1.7;
+  font-weight: 300;
+  letter-spacing: -0.005em;
+}
+.about-body p { margin-bottom: 22px; }
+.about-body p:last-child { margin-bottom: 0; }
+.about-body strong { color: var(--accent); font-weight: 500; }
+.about-body em { font-style: normal; font-weight: 500; color: var(--accent); }
+.about-body .muted { color: var(--text-soft); }
+
+.credentials {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 36px;
+}
+
+.cred {
+  background: var(--bg);
+  padding: 22px 26px;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  transition: background 0.2s;
+  align-items: start;
+}
+.cred:hover { background: var(--surface2); }
+
+.cred-icon {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  padding-top: 4px;
+}
+
+.cred-text { font-family: 'DM Sans', sans-serif; }
+.cred-text b {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 4px;
+  letter-spacing: -0.005em;
+}
+.cred-text span {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 300;
+  line-height: 1.5;
+}
+
+.stack-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  padding: 5px 11px;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+/* ══════════════════════════════════════
+   STAGE 5 — CONTACT
+   ══════════════════════════════════════ */
+.contact {
+  padding: 120px 48px 96px;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 96px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.contact::before {
+  content: '';
+  position: absolute;
+  bottom: -160px;
+  right: -160px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(185,227,106,0.06) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+/* unified h2 sizing handled above */
+.contact-h2 em { font-style: normal; font-weight: 500; color: var(--accent); }
+
+.contact-sub {
+  font-size: 16px;
+  color: var(--text);
+  line-height: 1.65;
+  font-weight: 300;
+  margin-bottom: 40px;
+  max-width: 540px;
+  letter-spacing: -0.005em;
+}
+.contact-sub .muted { color: var(--text-soft); }
+
+.contact-cta {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  padding: 16px 28px;
+  background: var(--accent);
+  color: var(--bg);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: opacity 0.2s;
+}
+.contact-cta:hover { opacity: 0.85; }
+
+.contact-links {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+
+.contact-link {
+  display: grid;
+  grid-template-columns: 110px 1fr 16px;
+  align-items: center;
+  padding: 20px 26px;
+  background: var(--bg);
+  text-decoration: none;
+  transition: background 0.2s;
+  gap: 18px;
+}
+.contact-link:hover { background: var(--surface2); }
+
+.cl-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text-soft);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cl-val {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+
+.cl-arrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--dim);
+  justify-self: end;
+}
+.contact-link:hover .cl-arrow { color: var(--accent); }
+
+/* FOOTER */
+footer {
+  padding: 36px 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+}
+
+.footer-left {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text-soft);
+  letter-spacing: 0.06em;
+}
+
+.footer-quote {
+  font-family: 'Newsreader', serif;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--muted);
+  font-weight: 300;
+}
+
+/* REVEAL */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.reveal.vis { opacity: 1; transform: translateY(0); }
+
+/* RESPONSIVE */
+@media (max-width: 1000px) {
+  nav { padding: 0 24px; }
+  .nav-links { display: none; }
+  .hero { padding: 110px 24px 0; }
+  .hero-h1 { font-size: clamp(44px, 9vw, 72px); }
+  .stat-bar { grid-template-columns: repeat(2, 1fr); }
+  .stat-cell { padding: 36px 24px 32px; }
+  .stat-n { font-size: clamp(56px, 14vw, 80px); }
+  .peak, .process, .about, .contact { padding: 80px 24px 64px; }
+  .decisions, .token-compare { grid-template-columns: 1fr; }
+  .term-body { grid-template-columns: 1fr; height: auto; }
+  .term-detail { height: 320px; }
+  .term-head, .term-row { grid-template-columns: 130px 150px 120px 120px 100px 110px 90px 80px; gap: 12px; padding-left: 18px; padding-right: 18px; }
+  .about, .contact { grid-template-columns: 1fr; gap: 48px; }
+  footer { flex-direction: column; gap: 16px; padding: 28px 24px; text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-id">Raymond Fenton <span class="sub">— RevOps · MarOps · Clay Systems</span></div>
+  <div class="nav-right">
+    <ul class="nav-links">
+      <li><a href="#result">Result</a></li>
+      <li><a href="#output">Output</a></li>
+      <li><a href="#process">Process</a></li>
+      <li><a href="#about">About</a></li>
+      <li><a href="../forensic-payload/">Forensic Payload</a></li>
+    </ul>
+    <a href="mailto:raymondf.gtm@gmail.com" class="nav-contact">Get in touch →</a>
+  </div>
+</nav>
+
+<!-- ══ STAGE 1: HERO ══ -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-pre reveal">RevOps · MarOps · CRM-Ready Automation</div>
+    <h1 class="hero-h1 reveal">
+      <em>Reverse Engineering Clay.</em><br>
+      <span class="faded">45 Days Building The Enrichment Engine Backwards.</span>
+    </h1>
+    <p class="hero-sub reveal">
+      To understand what Clay's enrichment columns actually do at the model level, I rebuilt the workflow from scratch on a shoestring budget — then translated the lessons back into Clay-style tables, HubSpot-ready payloads, and operational handoff design.
+    </p>
+    <div class="hero-btns reveal">
+      <a href="#result" class="btn-a">See the result ↓</a>
+      <a href="../forensic-payload/" class="btn-b">See Forensic Payload →</a>
+    </div>
+  </div>
+</section>
+
+<!-- STAT BAR -->
+<div class="stat-bar reveal">
+  <div class="stat-cell">
+    <div class="stat-n">45</div>
+    <div class="stat-d"><b>Days of testing</b>Hundreds of prompt configs. Every failure documented.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">1,500</div>
+    <div class="stat-d"><b>Leads enriched per day</b>Fifty every ten minutes, autonomous.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n"><small>$</small>300</div>
+    <div class="stat-d"><b>Total budget</b>One Google Cloud stipend. One $20 Claude plan.</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-n">18</div>
+    <div class="stat-d"><b>Failure modes resolved</b>Every one shipped to the changelog.</div>
+  </div>
+</div>
+
+<!-- ══ STAGE 2: PEAK — THE RESULT (TOKENS) ══ -->
+<section class="peak" id="result">
+  <div class="section-label reveal" data-num="01">The Result</div>
+  <h2 class="peak-h2 reveal"><em>8,000 Tokens</em> Per Node.<br>Now <em>Twelve.</em></h2>
+  <p class="peak-lead reveal">
+    The biggest single fix in 45 days of testing. <span class="muted">Same workflow. Same enrichment logic. Different handoff model — and the failures stopped.</span> This is the kind of systems thinking I bring to RevOps, MarOps, CRM cleanup, and marketing automation.
+  </p>
+
+  <div class="evidence-head reveal">
+    <div class="evidence-eyebrow"><b>Decision 01</b> · Push model → Pull model</div>
+    <div class="evidence-eyebrow">Token cost per node handoff</div>
+  </div>
+  <div class="token-compare reveal">
+    <div class="tc-side before">
+      <div class="tc-tag before"><span class="dot"></span>Before — push model</div>
+      <div class="tc-headline">8,000<span class="unit">tokens / node</span></div>
+      <div class="tc-sub">n8n was the cargo truck. Every node carried the full lead payload.</div>
+      <div class="tc-code">
+        <span class="node">Discovery</span><span class="arrow">→</span><span class="bad">{ company, job_url, signals[], health[], logs[] }</span><br>
+        <span class="node">Enrichment</span><span class="arrow">→</span><span class="bad">{ ...discovery, contact, proof_urls[] }</span><br>
+        <span class="node">Render</span><span class="arrow">→</span><span class="bad">{ ...enrichment, final_payload, log }</span>
+      </div>
+      <div class="tc-bullets">
+        <div class="tc-bullet">n8n expression failures on every large batch</div>
+        <div class="tc-bullet">Gemini context corruption mid-pipeline</div>
+        <div class="tc-bullet">Silent data loss between handoffs</div>
+      </div>
+    </div>
+    <div class="tc-side after">
+      <div class="tc-tag after"><span class="dot"></span>After — pull model</div>
+      <div class="tc-headline">12<span class="unit">tokens / node</span></div>
+      <div class="tc-sub">Agents pull their own data. n8n passes only a session_id.</div>
+      <div class="tc-code">
+        <span class="node">Discovery</span><span class="arrow">→</span><span class="good">{ session_ids[] }</span><br>
+        <span class="node">Enrichment</span><span class="arrow">→</span><span class="good">{ status, session_id }</span><br>
+        <span class="node">Render</span><span class="arrow">→</span><span class="good">{ status, session_id }</span>
+      </div>
+      <div class="tc-bullets">
+        <div class="tc-bullet">Zero expression failures across 1,500 leads/day</div>
+        <div class="tc-bullet">Each agent owns its own context window</div>
+        <div class="tc-bullet">n8n is the starter pistol, not the engine</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STAGE 3: OUTPUT — THE TABLE ══ -->
+<section class="peak" id="output">
+  <div class="section-label reveal" data-num="02">The Output</div>
+  <h2 class="peak-h2 reveal">Real GTM Signals. <em>Clean Handoffs.</em></h2>
+  <p class="peak-lead reveal">
+    Companies, contacts, funding signals, friction types, and handoff-ready GTM payloads — the kind of structured record Clay can prepare and HubSpot can receive. <span class="em">Select any row.</span>
+  </p>
+
+  <div class="terminal reveal">
+    <div class="term-bar">
+      <div class="td td-r"></div>
+      <div class="td td-y"></div>
+      <div class="td td-g"></div>
+      <div class="term-title">GTM Career Leads · Status = Finished · HubSpot-ready review view</div>
+    </div>
+    <div class="term-body">
+      <div class="term-list">
+        <div class="term-head">
+          <span>Company</span>
+          <span>Contact</span>
+          <span>Role</span>
+          <span>Email</span>
+          <span>LinkedIn</span>
+          <span>Funding signal</span>
+          <span>Friction</span>
+          <span style="text-align:right">Status</span>
+        </div>
+        <div id="term-rows"></div>
+      </div>
+      <div class="term-detail" id="term-detail">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);text-align:center;padding:120px 0;line-height:2;">// select a row<br>to view intelligence</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STAGE 4: PROCESS — HOW I THINK ══ -->
+<section class="process" id="process">
+  <div class="section-label reveal" data-num="03">How I Think</div>
+  <h2 class="process-h2 reveal">Constraints, <em>Reframed.</em></h2>
+  <p class="process-lead reveal">
+    Architecture constraints are just problems that haven't been reframed yet. <span class="muted">Two more decisions worth seeing — plus a follow-up artifact on forensic signal extraction.</span> <a href="../forensic-payload/" style="color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent);">Forensic Payload ↗</a>
+  </p>
+
+  <div class="decisions reveal" style="grid-template-columns: 1fr 1fr;">
+    <div class="decision">
+      <div class="dec-num">DECISION 02</div>
+      <div class="dec-q">Why Typed Output Contracts?</div>
+      <p class="dec-a">The enrichment JSON was nondeterministic — different key names, different nesting, different field locations every run. The normalization layer had seven fallback paths just to find an email. <strong>The fix: an output contract at the stage boundary.</strong> The model treats it as ground truth. Normalization collapsed from seven paths to one.</p>
+    </div>
+      <div class="decision">
+        <div class="dec-num">DECISION 03</div>
+        <div class="dec-q">Why The Parser Layer?</div>
+        <p class="dec-a">The practical problem was not the language or framework. It was messy payloads moving between tools. The parser layer normalized n8n input, stripped bad URLs and citation noise, and made each row usable before it reached the next stage.</p>
+      </div>
+  </div>
+
+  <div class="flow-wrap reveal">
+    <div class="flow-caption">// staged context architecture</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-bottom:28px;">
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent);letter-spacing:0.06em;margin-bottom:6px;">Discovery</div>
+        <div style="font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text-soft);line-height:1.55;font-weight:300;">Finds companies from live job postings and returns structured source signals.</div>
+      </div>
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent);letter-spacing:0.06em;margin-bottom:6px;">Diagnostic Enrichment</div>
+        <div style="font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text-soft);line-height:1.55;font-weight:300;">Pulls funding, stack, contact, and intent into a typed enrichment payload.</div>
+      </div>
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent);letter-spacing:0.06em;margin-bottom:6px;">Final Render</div>
+        <div style="font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text-soft);line-height:1.55;font-weight:300;">Turns the compact enrichment brief into a handoff-ready payload.</div>
+      </div>
+    </div>
+    <div class="flow">
+      <div class="flow-node warm">Engine_Ignition</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Set_Campaign_Message</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node warm">Discovery_Call</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Parse_Session_IDs</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node warm">Enrichment_Call</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node warm">Render_Call</div>
+    </div>
+    <div class="flow-note">
+      <span class="comment">// n8n passes only { session_id } — zero payload between nodes</span><br>
+      <span class="comment">// each stage SELECTs its own data from Postgres over private VPC</span><br>
+      <span class="comment">// status: Scraped → Enriched → Finished → HubSpot-ready</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STAGE 5: ABOUT ══ -->
+<section class="about" id="about">
+  <div>
+    <div class="section-label reveal" data-num="04">The Person</div>
+    <h2 class="about-h2 reveal">The Handoff Matters More Than <em>The Model.</em></h2>
+    <div class="about-body reveal">
+      <p>I learned that the hard part of AI-assisted GTM work is rarely the model by itself. <span class="muted">It is the handoff: what each step receives, what it is allowed to output, and whether the next tool can trust the payload.</span></p>
+      <p>This experiment wasn't built to be impressive. It was built to be understood. I rebuilt Clay-like enrichment logic in plain text, tested output contracts at each boundary, and learned which parts belong inside Clay columns, which parts belong in HubSpot, and which parts should never reach an outbound tool until QA passes.</p>
+      <p>I sit at the intersection of <strong>revenue operations</strong>, <strong>marketing automation</strong>, and <strong>AI-assisted workflow design</strong> — which means I care about clean CRM payloads, HubSpot handoffs, and practical Clay tables as much as clever prompts.</p>
+    </div>
+  </div>
+  <div class="reveal">
+    <div class="credentials">
+      <div class="cred">
+        <div class="cred-icon">01</div>
+        <div class="cred-text"><b>Open to RevOps, MarOps &amp; Marketing Automation roles</b><span>Remote only. Available now.</span></div>
+      </div>
+      <div class="cred">
+        <div class="cred-icon">02</div>
+        <div class="cred-text"><b>DevOps Software Engineering Program · 2026</b><span>Implementation literacy applied to RevOps and MarOps workflows.</span></div>
+      </div>
+      <div class="cred">
+        <div class="cred-icon">03</div>
+        <div class="cred-text"><b>Fenton Bookkeeping</b><span>Built the full GTM stack from zero — site, AI-SEO engine, lead pipeline. Operating revenue capability without an agency.</span></div>
+      </div>
+      <div class="cred">
+        <div class="cred-icon">04</div>
+        <div class="cred-text"><b>Reverse Engineering Clay · 45 days, $300</b><span>1,500 leads/day at peak. 18 failure modes resolved. Now translating the pattern back into Clay and HubSpot.</span></div>
+      </div>
+    </div>
+    <div class="stack-tags">
+      <span class="tag">HubSpot</span>
+      <span class="tag">Clay</span>
+      <span class="tag">n8n</span>
+      <span class="tag">Retool</span>
+      <span class="tag">Postgres</span>
+      <span class="tag">Cloud Run</span>
+      <span class="tag">Cloud SQL</span>
+      <span class="tag">GCP VPC</span>
+      <span class="tag">Node.js</span>
+      <span class="tag">Python</span>
+      <span class="tag">API Integrations</span>
+      <span class="tag">Context Engineering</span>
+      <span class="tag">Harness Engineering</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STAGE 6: CONTACT ══ -->
+<section class="contact" id="contact">
+  <div>
+    <div class="section-label reveal" data-num="05">Get In Touch</div>
+    <h2 class="contact-h2 reveal">The Experiment Is Still Running. <em>Let's Talk.</em></h2>
+    <p class="contact-sub reveal">If you're hiring for entry-level or junior RevOps, Marketing Ops, CRM Ops, or Marketing Automation — and you want someone who understands Clay, HubSpot-ready data, prompts, and handoffs — <span class="muted">I'd like to hear about it.</span></p>
+    <a href="mailto:raymondf.gtm@gmail.com" class="contact-cta reveal">Send a message →</a>
+  </div>
+  <div class="reveal">
+    <div class="contact-links">
+      <a href="mailto:raymondf.gtm@gmail.com" class="contact-link">
+        <span class="cl-label">Email</span>
+        <span class="cl-val">raymondf.gtm@gmail.com</span>
+        <span class="cl-arrow">↗</span>
+      </a>
+      <a href="https://github.com/BlueSkyGTM" class="contact-link">
+        <span class="cl-label">GitHub</span>
+        <span class="cl-val">github.com/BlueSkyGTM</span>
+        <span class="cl-arrow">↗</span>
+      </a>
+      <a href="https://www.linkedin.com/in/raymond-fenton-51b01b160/" class="contact-link">
+        <span class="cl-label">LinkedIn</span>
+        <span class="cl-val">linkedin.com/in/raymond-fenton-51b01b160</span>
+        <span class="cl-arrow">↗</span>
+      </a>
+      <a href="https://fentontaxandbookkeepingservices.com" class="contact-link">
+        <span class="cl-label">Client work</span>
+        <span class="cl-val">fentontaxandbookkeepingservices.com</span>
+        <span class="cl-arrow">↗</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-left">© 2026 Raymond Fenton · Remote only · Available now</div>
+  <div class="footer-quote">Built without venture capital.</div>
+</footer>
+
+<script>
+// LEADS
+const leads = [
+  {co:'Grafana Labs',title:'Staff AI Engineer',contact:'Samuel Garen',role:'Director of RevOps Analytics',email:'sdgaren@gmail.com',li:'linkedin.com/in/sdgaren',fr:'Manual Data Debt',fund:'$250M Series E · March 2026',status:'FINISHED',bite:'Saw the $250M Series E — it looks like you\'re channeling that into a custom AI platform to automate GTM workflows. Building on top of fragmented GTM data often creates more manual work than it solves. The move is a unified data layer that automates revenue ops without the internal build overhead.',url:'grafana.com'},
+  {co:'Togal AI',title:'GTM Engineer',contact:'Patrick Murphy',role:'Founder & CEO',email:'',li:'linkedin.com/in/patrick-murphy',fr:'API Stutter',fund:'$7M Series A · Aug 2025',status:'EMAIL GAP',bite:'Patrick, saw the Series A news — that\'s typically when the GTM stack (Clay, HubSpot, n8n) starts creating more engineering overhead than revenue velocity. That GTM Engineer role is a classic API stutter signal. The move is a unified customer record before automating workflows around it.',url:'togal.ai'},
+  {co:'Mercor',title:'SalesOps Expert',contact:'Brendan Foody',role:'Co-Founder and CEO',email:'',li:'',fr:'API Stutter',fund:'$350M Series C · Oct 2025',status:'SPOTTY',bite:'Saw the Series C momentum and the SalesOps role requiring both HubSpot and Salesforce expertise. This pattern usually means sync issues between the two are creating a drag on revenue predictability. The goal is a single source of truth without the API babysitting.',url:'mercor.com'},
+  {co:'Dash0',title:'RevOps Manager',contact:'Marcel Sim',role:'Head of Growth',email:'',li:'',fr:'API Stutter',fund:'$110M Series B · March 2026',status:'SPOTTY',bite:'Marcel, saw the $110M Series B — looks like you\'re building serious GTM momentum. The plan to stitch HubSpot with n8n and custom APIs is a classic signal that API stutter is forcing you to manage the stack instead of scaling the motion.',url:'dash0.com'},
+  {co:'LocalStack',title:'RevOps & Automation Lead',contact:'Gerta Sheganaku',role:'Co-Founder and Co-CEO',email:'',li:'linkedin.com/in/gerta-sheganaku',fr:'Manual Data Debt',fund:'$25M Series A · Nov 2024',status:'EMAIL GAP',bite:'Congrats on the $25M Series A — saw the RevOps and Automation Lead role to align GTM teams. You\'re hitting the point where manual data syncs start to break and create pipeline visibility issues. Most post-Series A founders model their GTM data architecture first, before committing to new hires.',url:'localstack.cloud'},
+  {co:'MonetizeMore',title:'RevOps Systems Admin',contact:'Eric Lagunas',role:'VP of Revenue',email:'first@monetizemore.com',li:'',fr:'API Stutter',fund:'',status:'NO FUNDING',bite:'Eric, as a GTM engine scales, the focus shifts from pure execution to making revenue predictable. Relying on a RevOps admin to act as a human API for Salesforce creates data gaps that undermine pipeline visibility.',url:'monetizemore.com'},
+  {co:'SOVRA',title:'Marketing Ops Leader',contact:'Tom Spengler',role:'CEO',email:'',li:'linkedin.com/in/tomspengler',fr:'API Stutter',fund:'Acquired by KKR · 2024',status:'EMAIL GAP',bite:'Tom, congrats on the KKR acquisition. Saw the search for a marketing ops leader to bridge HubSpot and Salesforce. When teams manually stitch lead data from marketing to opportunity data in sales, the executive view of the pipeline becomes unreliable.',url:'sovra.com'},
+  {co:'Connor Group',title:'CRM & RevOps Analyst',contact:'Tiffany Watts',role:'Managing Director, CX',email:'tiffany.watts@connorgp.com',li:'',fr:'Manual Data Debt',fund:'',status:'NO FUNDING',bite:'Tiffany, saw the opening for a CRM & RevOps Analyst — as you scale, the manual data debt inside HubSpot starts creating a drag on pipeline visibility. The goal is automating GTM data hygiene before it ever hits the CRM.',url:'connorgp.com'},
+];
+
+const rowsEl = document.getElementById('term-rows');
+const detEl = document.getElementById('term-detail');
+
+function showDetail(l) {
+  detEl.innerHTML = `
+    <div class="dl">Company</div>
+    <div class="dv"><strong>${l.co}</strong> <span class="small">· ${l.url}</span></div>
+    <div class="dl">Role · Contact</div>
+    <div class="dv">${l.contact} <span class="small">— ${l.role}</span></div>
+    ${l.email?`<div class="dl">Email</div><div class="dv"><a href="mailto:${l.email}">${l.email}</a></div>`:''}
+    ${l.li?`<div class="dl">LinkedIn</div><div class="dv"><a href="https://${l.li}">${l.li}</a></div>`:''}
+    <div class="dl">Source role</div>
+    <div class="dv">${l.title}</div>
+    <div class="dl">Friction type</div>
+    <div class="dv"><span class="tr-badge">${l.fr}</span></div>
+    ${l.fund?`<div class="dl">Funding signal</div><div class="d-fund">${l.fund}</div>`:''}
+    <div class="dl">Outreach bite</div>
+    <div class="d-bite">"${l.bite}"</div>
+  `;
+}
+
+leads.forEach((l,i) => {
+  const row = document.createElement('div');
+  row.className = 'term-row' + (i===0?' on':'');
+  row.tabIndex = 0;
+  row.setAttribute('role', 'button');
+  row.setAttribute('aria-label', `View GTM lead details for ${l.co}`);
+  row.setAttribute('aria-pressed', i===0 ? 'true' : 'false');
+  row.innerHTML = `
+    <div class="tr-co">${l.co}</div>
+    <div class="tr-name"><b>${l.contact}</b></div>
+    <div class="tr-cell good">${l.role}</div>
+    <div class="tr-cell${l.email?' good':' empty'}">${l.email || 'not found'}</div>
+    <div class="tr-cell${l.li?' good':' empty'}">${l.li ? 'profile found' : 'not found'}</div>
+    <div class="tr-fund${l.fund?'':' empty'}">${l.fund ? l.fund.split('·')[0].trim() : '—'}</div>
+    <div><span class="tr-badge">${l.fr}</span></div>
+    <div class="tr-status${l.status === 'FINISHED' ? '' : ' warn'}">${l.status}</div>
+  `;
+  row.onclick = () => {
+    document.querySelectorAll('.term-row').forEach(r=>{
+      r.classList.remove('on');
+      r.setAttribute('aria-pressed', 'false');
+    });
+    row.classList.add('on');
+    row.setAttribute('aria-pressed', 'true');
+    showDetail(l);
+  };
+  row.onkeydown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      row.click();
+    }
+  };
+  rowsEl.appendChild(row);
+});
+
+showDetail(leads[0]);
+
+// SCROLL REVEAL
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('vis'); });
+}, {threshold:0.08});
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+</script>
+</body>
+</html>
