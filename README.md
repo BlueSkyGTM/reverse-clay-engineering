@@ -1,595 +1,254 @@
-# TL;DR
+# Reverse Engineering Clay
 
-### **A technical reconstruction of Clay's orchestration logic.**
-**1,000+ leads enriched per afternoon | Thousands of prompt simulations | Optimized on a Google Cloud stipend**
+A technical reconstruction of Clay-style GTM enrichment logic, built on a shoestring budget to understand how AI-assisted enrichment systems manage discovery, structured context, staged handoffs, failure states, and final payload generation.
 
----
+This repository is not a production outbound platform. It is an architecture record: what had to exist for a Clay-like enrichment workflow to survive real row-level ambiguity, model drift, n8n payload limits, job-board noise, contact/research handoff failures, and schema instability.
 
-## ## Executive Summary
-This project represents a high-fidelity architectural study of modern GTM orchestration, built to identify the mechanical limits of large-scale enrichment "waterfalls." By leveraging a **Google Cloud stipend**, I architected a stateless server environment where compute and **Postgres** storage were co-located to mirror the low-latency performance of gold-standard tools like Clay.
+## Core Thesis
 
-Through **thousands of prompt simulations** and rigorous stress testing, the system successfully achieved a throughput of **1,000+ enriched leads in a single afternoon**. This reconstruction provided an intimate, "under-the-hood" awareness of how enterprise platforms manage complex **tactical handoffs** between agents while maintaining data integrity.
+Generic enrichment answers are cheap. Durable enrichment is harder.
 
-> **Notice:** This repository serves as a functional architecture guide and forensic log. Following the successful validation of these logic patterns, development has transitioned to a **Clay-native** implementation to leverage its native infrastructure for production-grade operational efficiency.
----
+The important idea this project uncovered is that enrichment quality improves when the table becomes a shared context surface. Each stage writes a small, durable payload that later stages can inherit instead of starting over from raw context.
 
-## 1. ARCHITECTURE OVERVIEW
+In other words:
 
-### The Three-Agent Pull Model
-
-The pipeline runs three AI agents in sequence for every lead:
-
-```
-Cloud Scheduler → n8n → Ahab → [Postgres] → Nemo → [Postgres] → Neptune → [Postgres]
+```text
+Clay columns are not just lookups.
+They can be memory-bearing handoffs.
 ```
 
-**Ahab** — The Hunter. Receives a campaign message string. Calls Gemini with googleSearch grounding. Discovers real companies with active hiring signals. Writes one row per company to Postgres with `status='Scraped'` and returns a list of `session_ids` to n8n.
+The server-era system used Postgres for that shared context surface. Clay can use the table itself.
 
-**Nemo** — The Intelligence Analyst. Receives a single `session_id`. Reads `ahab_payload` from Postgres. Calls Gemini with googleSearch grounding to perform forensic enrichment. Determines friction type, contact recon, funding signal, and direct domain. Updates the row with `status='Enriched'` (or `status='Shipwrecked'` if CATALYST_STALE).
+## What This Project Proved
 
-**Neptune** — The Authority Engine. Receives a single `session_id`. Reads `nemo_payload` from Postgres. Calls Gemini without grounding to synthesize a Schwartz-style outreach message. Updates the row with `status='Finished'` and writes `outreach_bite`.
+The original system used Google Cloud, n8n, Postgres, and Gemini as a runtime lab. That runtime is no longer the product. It was the test bench that made the important design patterns visible:
 
-### Why Pull, Not Push
+- A lead workflow needs stage contracts, not one giant prompt.
+- A workflow tool should not carry heavy AI payloads between every step.
+- Grounded search is useful for discovery, but it needs filters that protect against job-board aggregators.
+- AI output needs strict contracts, fallback behavior, and failure visibility.
+- Later enrichments are more useful when they inherit the last stage's structured judgment.
+- The final value is not "send outbound." The value is a trustworthy GTM payload that can move into Clay, HubSpot, or a sequencing tool with clean state.
 
-A Push model would have n8n pass the full lead payload between nodes. This creates three problems: n8n's memory limits cap batch sizes, any node failure loses the payload entirely, and the data isn't queryable mid-pipeline. 
+## System Overview
 
-The Pull model stores state in Postgres at each stage. n8n passes only a `session_id` string. Each agent reads its own input from Postgres and writes its output to Postgres. n8n never sees, transforms, or stores lead data. This means:
-- Failures are recoverable — re-run any agent with the same session_id
-- Every stage is independently queryable in Retool
-- Batch size is limited only by Ahab's token ceiling, not n8n's memory
-- The `/api/reprocess` endpoint can re-run Neptune on any lead independently
+The server-era pipeline had three stages:
 
-### How session_id Works
-
-`session_id` is generated by Ahab server-side during the INSERT:
-
-```js
-const session_id = 'lead_' + company_name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+```text
+Discovery -> Diagnostic Enrichment -> Final Payload
 ```
 
-Format: `lead_acme_corp`, `lead_stripe_inc`, etc. It is deterministic — the same company name always produces the same session_id. This is intentional: if Ahab finds the same company on a re-run, the ON CONFLICT clause deduplicates it rather than creating a duplicate row.
+The infrastructure around those stages was:
 
-**Critical rule:** `session_id` is always `input_session_id` from the request body. Neither the Ahab payload (read in Nemo) nor the Nemo payload (read in Neptune) contains a `session_id` field. Reading `payload.session_id` anywhere is always undefined and must not be introduced.
-
-### Agent Responsibilities at a Glance
-
-| Agent | Model | Grounding | Output | Status Set |
-|---|---|---|---|---|
-| Ahab | gemini-2.5-flash | googleSearch | `ahab_payload` JSONB, `session_ids[]` to n8n | Scraped |
-| Nemo | gemini-2.5-pro | googleSearch | `nemo_payload` JSONB, enrichment columns | Enriched or Shipwrecked |
-| Neptune | gemini-2.5-pro | None | `neptune_payload` JSONB, `outreach_bite` TEXT | Finished |
-
----
-
-## 2. INFRASTRUCTURE REQUIREMENTS
-
-### Cloud Run Service
-
-**Service name:** `fleet-agents`
-**URL:** `https://fleet-agents-954265623326.us-central1.run.app`
-**Region:** `us-central1`
-**Project:** `project-8bd530c5-c699-4b50-868`
-
-The service requires VPC access to reach Cloud SQL at the private IP `10.5.1.3`. Deploy with a VPC connector flag. The exact deploy command from Cloud Shell:
-
-```bash
-gcloud run deploy fleet-agents \
-  --source . \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --vpc-connector <your-vpc-connector-name> \
-  --project project-8bd530c5-c699-4b50-868
+```text
+Cloud Scheduler -> n8n -> fleet-agents API -> Postgres -> Retool
 ```
 
-The source directory must contain `server.js`, `package.json`, and any required files. The service listens on `process.env.PORT || 3000` — Cloud Run injects `PORT` automatically.
+n8n was intentionally reduced to traffic control. It triggered the workflow and passed stable identifiers. The server and database handled the actual enrichment state.
 
-### Cloud SQL / Postgres
+## Core Architecture Decision: Pull Model
 
-**Host (VPC private IP):** `10.5.1.3`
-**Port:** `5432`
-**Database:** `nocodb_data`
-**Runtime user:** `fleet_app`
-**Password:** `DeepWaterHubPipeline2026`
+The first version pushed full payloads through n8n. That failed because every node carried too much context: source URLs, company notes, research strings, model logs, contacts, health signals, and partial output fields. Payloads grew, expressions broke, and downstream model calls received polluted context.
 
-Connect for schema operations via Cloud Shell only:
-```bash
-gcloud sql connect <instance-name> --user=pipeline_admin --database=nocodb_data
+The fix was a pull model:
+
+```text
+Discovery writes payload to Postgres
+n8n passes session_id
+Enrichment reads by session_id and writes structured payload
+n8n passes session_id
+Final render reads by session_id and writes final output
 ```
 
-Never use `fleet_app` for schema operations. `fleet_app` is runtime-only (SELECT, INSERT, UPDATE on lead tables and fleet_errors).
-
-### Postgres Schema — Production
+This reduced handoffs to a stable key and made every stage independently inspectable.
 
-The schema below reflects what server.js actually reads and writes. It differs from `framework/schema/campaign_template.sql`, which is from an earlier architecture and does not have `session_id`, `ahab_payload`, or the Divers columns.
-
-**Lead table — one per campaign (example: `gtm_career_leads`):**
-
-```sql
-CREATE TABLE gtm_career_leads (
-  id                    SERIAL,
-  session_id            TEXT NOT NULL,
-  company_name          TEXT NOT NULL,
-  status                TEXT NOT NULL DEFAULT 'Scraped',
-  ahab_payload          JSONB,
-  nemo_payload          JSONB,
-  neptune_payload       JSONB,
-  direct_url            TEXT,
-  target_service_intent TEXT,
-  contact_recon         JSONB,
-  email                 TEXT,
-  friction_type         TEXT,
-  funding_signal        TEXT,
-  url_recon_notes       TEXT,
-  health_audit_notes    TEXT,
-  friction_notes        TEXT,
-  outreach_bite         TEXT,
-  UNIQUE (session_id, company_name)
-);
-```
+## Discovery: Search Filtering
 
-The UNIQUE constraint on `(session_id, company_name)` is what the ON CONFLICT clause targets. Since `session_id` is derived deterministically from `company_name`, this effectively deduplicates by company.
+The discovery stage found companies with active GTM, RevOps, MarOps, or automation signals.
 
-**Status values and what they mean:**
+Important behaviors:
 
-| Status | Set by | Meaning |
-|---|---|---|
-| `Scraped` | Ahab INSERT | Row exists, enrichment not yet run |
-| `Enriched` | Nemo UPDATE | Forensic enrichment complete |
-| `Shipwrecked` | Nemo UPDATE (CATALYST_STALE path) | Lead disqualified — stale funding signal |
-| `Finished` | Neptune UPDATE | Outreach bite synthesized — row complete |
+- Used Gemini with Google Search grounding to reach live web evidence.
+- Searched from role and campaign instructions rather than a static lead list.
+- Used job-posting search patterns to reach company career pages and relevant openings.
+- Filtered job-board aggregators such as Indeed, LinkedIn Jobs, Glassdoor, Jobgether, Jobsora, and ZipRecruiter.
+- Generated deterministic `session_id` values from company names.
+- Wrote one row per company to Postgres with `status = 'Scraped'`.
 
-**Fleet errors table:**
+The useful insight is not that this was a crawler. It was not. The insight is that grounded search plus strict company filtering can turn noisy public hiring surfaces into structured GTM inputs.
 
-```sql
-CREATE TABLE fleet_errors (
-  id           SERIAL PRIMARY KEY,
-  session_id   TEXT,
-  reason_code  TEXT,
-  company_name TEXT,
-  created_at   TIMESTAMP DEFAULT NOW()
-);
-```
+Relevant files:
 
-Note: The `fleet_errors` schema in `framework/schema/campaign_template.sql` is from an older architecture and has different columns (`node_name`, `error_message`, `stack_trace`, etc.). The production table uses `session_id`, `reason_code`, `company_name` only.
+- `system_files/src/agents/ahab.js`
+- `agent_framework/prompts/ahab_system.yaml`
+- `n8n_pipelines/WORKFLOW_BUILDER.md`
 
-**Reason codes written to fleet_errors:**
+## Diagnostic Enrichment
 
-| Code | Written by | Cause |
-|---|---|---|
-| `CATALYST_STALE` | Nemo SHIPWRECKED path | Funding event older than 18 months |
-| `NEMO_FAILURE` | Nemo catch block | Any unhandled exception in Nemo |
-| `NEPTUNE_FAILURE` | Neptune catch block (inside runNeptuneSynthesis) | Any unhandled exception in Neptune |
-| `AHAB_FAILURE` | Ahab catch block | Any unhandled exception in Ahab (session_id and company_name are null) |
+The enrichment stage read a stored discovery payload and produced a structured enrichment object.
 
-**Add new campaign table by copying the lead table template and changing the table name.** New campaigns do not require code changes to server.js if they use the same columns. If a new campaign needs different output columns, server.js must be updated.
+The important work was forensic, not generic enrichment. It classified operational friction into reusable categories:
 
-### Environment Variables
+| Friction type | Meaning |
+|---------------|---------|
+| `API Stutter` | Tools exist but do not communicate cleanly |
+| `Scale Friction` | Growth is outpacing operational infrastructure |
+| `Manual Data Debt` | Humans are doing work that should be automated |
+| `Displacement Signal` | A company is paying for a tool or role that points to a better system-level fix |
 
-No environment variables are required in production — all config is hardcoded in server.js (Postgres connection, project ID, model names). The only runtime variable consumed is `PORT`, injected by Cloud Run automatically.
+It also handled disqualification. If a funding or growth signal was stale, the row could be marked `Shipwrecked` instead of being pushed forward as a false positive.
 
-If credentials are ever moved to environment variables (recommended for security), the pg Pool config and PROJECT constant would become:
-```
-DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS
-GCP_PROJECT
-```
+Relevant files:
 
-### Service Account Permissions
+- `system_files/src/agents/nemo.js`
+- `agent_framework/prompts/nemo_system.yaml`
+- `system_files/src/utils/parser.js`
+- `system_files/src/utils/parser.py`
 
-The Cloud Run service identity (service account) must have:
-- `roles/aiplatform.user` — to call Vertex AI generateContent
-- `roles/cloudsql.client` — to connect to Cloud SQL (only needed if using Cloud SQL Auth Proxy; with VPC private IP, network access is sufficient)
+## Parser Layer: Why It Mattered
 
-The `google-auth-library` in server.js uses Application Default Credentials, which automatically picks up the Cloud Run service account.
+The parser layer was the practical bridge between n8n, model output, and server code.
 
----
+`parser.py` normalized n8n payloads into a smaller shape the server could reliably process:
 
-## 3. SERVER.JS ANATOMY
-
-### Top-Level Imports and Pool
-
-```js
-import express from 'express';
-import { GoogleAuth } from 'google-auth-library';
-import fetch from 'node-fetch';
-import pkg from 'pg';
-const { Pool } = pkg;
-```
-
-`pg` is imported as a CommonJS default because it does not have ESM exports. The Pool is instantiated once at module load and shared across all requests. All Postgres operations use parameterized queries via `pool.query($1, $2, ...)` — no string interpolation of user data into SQL.
-
-### callGenerateContent(model, body)
-
-The single function responsible for all Gemini API calls. It:
-1. Gets an OAuth2 token from Application Default Credentials
-2. POSTs to the Vertex AI Agent Platform `generateContent` endpoint
-3. Extracts the text from `candidates[0].content.parts[0].text`
-4. Strips markdown code fences (Gemini sometimes wraps JSON in ```json blocks)
-5. Attempts `JSON.parse` twice — first on the full cleaned string, then on the first `{...}` match via regex
-6. Returns `{ raw: cleaned }` if both parses fail
-
-**Critical:** The `{ raw }` fallback is a signal of failure, not a safe default. Every handler checks `if (result?.raw) throw new Error(...)` immediately after the call. A `{ raw }` response that goes unchecked would silently write null enrichment data while setting status to Enriched or Finished.
-
-`Accept-Encoding: identity` is set to prevent compressed responses that the fetch client can't decompress.
-
-### extractFrictionType(payload)
-
-Reads Nemo's output and extracts one of the four canonical forensic terms. Searches in priority order:
-1. `payload.Enriched_Lead.Forensic_Friction_Type`
-2. `payload.Enriched_Lead.friction_type`
-3. `payload.Enriched_Lead.The_Divers.friction_notes`
-4. `payload.friction_notes`
-
-For each candidate, it looks for one of the four terms (`API Stutter`, `Scale Friction`, `Manual Data Debt`, `Displacement Signal`) as a substring match (case-insensitive). It guards against GTM/Accounting contamination — if the value is exactly "GTM" or "Accounting", it skips it, since these are service intent values not friction terms.
-
-Returns `null` if no valid term is found. This function was built before the Nemo OUTPUT CONTRACT existed and carries multi-path fallback logic. Once production confirms the OUTPUT CONTRACT is stable, the fallback paths after `Enriched_Lead.Forensic_Friction_Type` can be pruned.
-
-### extractFundingSignal(payload)
-
-Priority-ordered extraction of funding signal from Nemo's output:
-1. `payload.Enriched_Lead.funding_signal` (primary — OUTPUT CONTRACT path)
-2. `payload.funding_signal` (fallback)
-3. `payload.Nemo_Enrich_Audit.funding_signal` (fallback)
-4. Regex against `The_Divers.health_audit_notes` — matches patterns like `$40M`, `Series B`, `Seed round`, `Pre-seed`
-
-Used by Neptune as `result.funding_signal ?? extractFundingSignal(input)` — Neptune's schema-enforced output is preferred; the function is the fallback if schema output is null.
-
-### normalizeNemoPayload(payload)
-
-Called by Neptune before sending nemo_payload to Gemini. Extracts `email` and `contact_recon` from the nemo_payload using multi-path fallback (pre-OUTPUT-CONTRACT logic). Also calls `extractFrictionType` to get `nemo_friction_type` for use in Neptune's UPDATE.
-
-**Critical:** `contact_recon` is returned as a raw JS object, not a JSON string. The pg driver serializes raw objects correctly into JSONB. Wrapping in `JSON.stringify` stores a string literal inside JSONB, which breaks all `->` and `->>` operator queries in Retool downstream.
-
-### sanitizeDirectUrl(url)
-
-Guards against Vertex AI grounding redirect URLs being stored as `direct_url`. Returns `null` for any URL containing `vertexaisearch` or `grounding-api-redirect`. Applied at two points:
-1. In Ahab's INSERT params — on `lead.Job_URL`
-2. In Nemo's UPDATE params — on `lead.Direct_URL`
-
-The COALESCE in Nemo's UPDATE (`direct_url = COALESCE($2, direct_url)`) means: if Nemo finds a real domain, it overwrites Ahab's null; if Nemo also returns null or a vertex URL, the column stays null.
-
-### stripCitations(val)
-
-Removes bracketed citation markers from strings. Pattern: `/\[\d+(?:,\s*\d+)*\]/g`. Catches `[1]`, `[2, 6]`, `[1, 3, 5]`, `[11, 15]`, etc. Returns the input unchanged if not a string.
-
-Applied to:
-- All three Diver fields (in-place mutation of `result.Enriched_Lead.The_Divers` before stringifying for nemo_payload)
-- `nemo_funding_signal`
-- `friction_type` (redundant since extractFrictionType returns canonical terms, but harmless)
-
-### runNeptuneSynthesis(input_session_id)
-
-Shared function called by both `/api/neptune` and `/api/reprocess`. Contains all Neptune logic: DB read, Gemini call, raw guard, parse, UPDATE, fleet_errors on error. Throws errors with `err.httpStatus = 404` or `400` for known validation failures — endpoints read `err.httpStatus || 500` to set the response status.
-
-This function is the single source of truth for Neptune synthesis behavior. Any change to Neptune's Gemini config, UPDATE query, or schema must be made here, not in the endpoint handlers.
-
-### Ahab Handler — /api/ahab
-
-Receives `{ message }` (the campaign message string from n8n). Calls Gemini Flash with googleSearch grounding. Processes the `Catch` array:
-- Server-side aggregator filter (`AGGREGATORS` Set) blocks job boards regardless of prompt compliance
-- `sanitizeDirectUrl` on `lead.Job_URL` before INSERT
-- ON CONFLICT DO UPDATE with `WHERE gtm_career_leads.status = 'Scraped'` guard — prevents nightly re-runs from resetting Enriched or Finished leads
-- Returns `{ session_ids: [...], harpooner_logs: [...] }` to n8n
-
-On failure: writes `AHAB_FAILURE` to fleet_errors with `session_id = null` (no leads were processed).
-
-### Nemo Handler — /api/nemo
-
-Receives `{ session_id }`. Reads `ahab_payload` from Postgres. Calls Gemini Pro with googleSearch grounding.
-
-Post-call processing order (order matters):
-1. Raw guard check
-2. Parse parsedInput (ahab_payload, for fallback)
-3. Extract lead, company_name, email
-4. Strip citations from Diver fields in-place (mutates result before stringifying)
-5. Extract url_recon_notes, health_audit_notes, friction_notes_text
-6. Compute friction_type (after Diver mutation, so extractFrictionType reads clean values)
-7. Compute nemo_funding_signal (strip citations from funding_signal)
-8. SHIPWRECKED check — if SHIPWRECKED, write status + fleet_errors, return early
-9. UPDATE with all 12 parameters
-
-SHIPWRECKED check must come before the main UPDATE. The old bug (CHANGELOG #14) wrote `status='Enriched'` first, then detected SHIPWRECKED, creating a race window where a dead lead appeared alive.
-
-**Nemo cannot have responseSchema.** Gemini does not support `responseSchema` and `tools: [{ googleSearch: {} }]` simultaneously. Adding responseSchema to Nemo breaks grounding. The OUTPUT CONTRACT in NEMO_SYSTEM is advisory — enforced by prompt, not by schema.
-
-### Neptune Handler — /api/neptune
-
-Thin wrapper around `runNeptuneSynthesis`. Validates `session_id`, calls the function, returns `{ status: 'success', session_id, company_name }`.
-
-### Reprocess Handler — /api/reprocess
-
-Identical wrapper. Returns `{ status: 'reprocessed', session_id, company_name }`. Used to re-run Neptune synthesis on any lead with existing `nemo_payload` — specifically for rows stuck at Finished with empty `outreach_bite` (caused by pre-fix token truncation).
-
-### generationConfig Per Agent
-
-| Agent | Model | Temp | maxOutputTokens | Grounding | responseSchema |
-|---|---|---|---|---|---|
-| Ahab | gemini-2.5-flash | 0.0 | 16384 | googleSearch | None (prompt-only) |
-| Nemo | gemini-2.5-pro | 0.0 | 8192 | googleSearch | None (incompatible) |
-| Neptune | gemini-2.5-pro | 0.7 | 8192 | None | Yes (enforced) |
-
-**Why 8192 for Nemo and Neptune?** `gemini-2.5-pro` has internal thinking tokens that count against `maxOutputTokens`. The model consumes 1,500–3,000+ thinking tokens before emitting output. The previous limits (4096 for Nemo, 2048 for Neptune) caused truncated responses — JSON cut off mid-string — which fell back to `{ raw }`. 8192 provides sufficient headroom for thinking plus complete JSON output.
-
-**Why 16384 for Ahab?** Ahab is instructed to "fill the Catch array until the output token limit is reached." The ceiling is intentional — more tokens means more leads per run.
-
-**Why temperature 0.0 for Ahab and Nemo?** Both produce structured JSON output where consistency matters. Temperature 0.7 for Neptune introduces variation in the outreach copy so it doesn't read as templated.
-
-### Neptune responseSchema
-
-```js
-responseSchema: {
-  type: 'object',
-  required: ['Neptune_Log', 'Outreach_Bite', 'funding_signal'],
-  properties: {
-    Neptune_Log: {
-      type: 'object',
-      properties: {
-        intent_recognized: { type: 'string' },
-        friction_strategy: { type: 'string' },
-        rule_of_one_check: { type: 'string' }
-      }
-    },
-    Outreach_Bite: { type: 'string' },
-    funding_signal: { type: 'string', nullable: true },
-  },
+```json
+{
+  "session_id": "lead_example_company",
+  "company_name": "Example Company",
+  "email": null,
+  "friction_type": "API Stutter"
 }
 ```
 
-`nullable: true` is a Gemini-specific extension, not standard JSON Schema. Standard JSON Schema uses `type: ['string', 'null']`. Verify Gemini handles this correctly before relying on null funding_signal values.
+`parser.js` handled runtime cleanup:
 
-`responseMimeType: 'application/json'` is required alongside responseSchema to enable structured output mode.
+- Stripped citation markers such as `[1]` and `[2, 3]`.
+- Rejected Vertex AI grounding redirect URLs.
+- Extracted valid JSON from markdown-wrapped model output.
+- Located friction and funding signals across inconsistent model output paths.
+- Normalized contact payloads without corrupting JSONB.
 
----
+The parser layer is why the experiment became useful: it exposed the gap between "the model produced something" and "the workflow can safely use it."
 
-## 4. KNOWN FAILURE MODES
+## Final Payload Synthesis
 
-### How to Diagnose
+The final render stage read the enriched record and produced the final handoff payload.
 
-Primary diagnostic query in Retool or Cloud Shell:
-```sql
-SELECT session_id, company_name, reason_code, created_at
-FROM fleet_errors
-ORDER BY created_at DESC
-LIMIT 50;
-```
+The important lesson was not copywriting automation. Clay is not the outbound tool, and this repo should not be read as "Clay sends cold email." The useful pattern is that a final render stage should receive a narrow, validated brief rather than the full research context.
 
-Secondary — leads stuck in intermediate status:
-```sql
-SELECT status, COUNT(*) FROM gtm_career_leads GROUP BY status;
-```
+This stage tested:
 
-### Confirmed Production Failures (all fixed — see CHANGELOG.md)
+- Whether a compact structured payload could generate specific human-facing language.
+- Whether funding, friction type, contact context, and service intent were enough to produce a useful next-step payload.
+- Whether schema-like output contracts reduced drift.
 
-**funding_signal null in Postgres**
-Neptune read `lead.funding_signal` where `lead = input.Enriched_Lead || input`, but the field lives at `payload.Enriched_Lead.funding_signal`. Result in Retool: funding_signal column null even when Nemo found a signal. Fix: `extractFundingSignal()` with priority path search. Neptune prefers `result.funding_signal` (schema-enforced) and falls back to `extractFundingSignal(input)`.
+Relevant files:
 
-**empty outreach_bite on all rows**
-Cause: Neptune's `maxOutputTokens` was 2048. Gemini Pro thinking tokens consumed the entire budget before JSON output began, causing truncated responses and `{ raw }` fallback. The `{ raw }` result was not detected — `result.Outreach_Bite` was undefined, written as null. All rows showed `status='Finished'` with empty `outreach_bite`. Retool appearance: finished leads with blank outreach column. Fix: raised to 8192 + raw guard.
+- `system_files/src/agents/neptune.js`
+- `agent_framework/prompts/neptune_system.yaml`
+- `agent_framework/agents/stage_contracts.md`
 
-**Vertex AI URLs in direct_url**
-Ahab wrote `lead.Job_URL` directly to `direct_url` before `sanitizeDirectUrl` existed. Job URLs returned from grounding-enabled models are often Vertex redirect URLs, not company domains. Retool appearance: `direct_url` cells contain `https://vertexaisearch.cloud.google.com/...`. Fix: `sanitizeDirectUrl` applied to both Ahab INSERT and Nemo UPDATE.
+## Stage Contracts
 
-**Aggregators as Company_Name**
-Ahab returned Jobgether, Jobsora, etc. as valid companies. Rows like `lead_unknown_company__via_jobgether_` appear in Postgres. Fix: `AGGREGATORS` Set server-side filter + COMPANY_FILTER directive in prompt.
+The stage-contract document is the spine of the project. It defines what each stage must receive, what it must produce, and what the next stage can assume.
 
-**ON CONFLICT resetting Enriched leads to Scraped**
-Nightly Ahab re-run on a company already enriched reset `status='Scraped'`, re-queuing it through Nemo and Neptune, overwriting all enrichment work. Retool appearance: previously-finished leads reappear as Scraped with fresh timestamps. Fix: `WHERE gtm_career_leads.status = 'Scraped'` guard on DO UPDATE.
+This matters because agent workflows fail when every step receives "everything." Stage contracts force each stage to expose only the fields downstream work needs.
 
-**SHIPWRECKED leads briefly showing as Enriched**
-SHIPWRECKED check fired after the `status='Enriched'` UPDATE. Race window: a dead lead appeared alive momentarily. Fix: SHIPWRECKED check moved before the UPDATE.
+Key contract ideas:
 
-**contact_recon stored as string literal in JSONB**
-`JSON.stringify(contactRaw)` was passed to pg, which stored a string inside a JSONB column. Retool queries using `contact_recon->>'email'` returned null. Fix: removed `JSON.stringify` from `normalizeNemoPayload` — raw object passed, pg handles JSONB serialization.
+- Discovery can be skipped if a pre-sourced list satisfies the enrichment minimum input.
+- Enrichment must produce a structured `Enriched_Lead`.
+- The final render stage should not receive raw discovery output.
+- A deterministic handoff layer can strip full enrichment into a minimal brief.
 
-**Bracketed citations in Diver strings**
-Nemo returned `[1, 3]`, `[11, 15]` etc. in `friction_notes`, `health_audit_notes`, `url_recon_notes`. Fix: `stripCitations()` applied to all Diver fields in-place before storage.
+Relevant file:
 
-**Nemo/Neptune failures invisible in fleet_errors**
-Catch blocks returned 500 only. Failed leads stuck indefinitely in their current status with no diagnostic record. Fix: `NEMO_FAILURE` and `NEPTUNE_FAILURE` inserts added to both catch blocks.
+- `agent_framework/agents/stage_contracts.md`
 
-### Still Open (KNOWN GAPS)
+## n8n's Role
 
-**No fetch timeout on Gemini calls.** `callGenerateContent` has no timeout. A hung `gemini-2.5-pro` request blocks indefinitely, stalling all downstream leads in the batch. Fix pending: `signal: AbortSignal.timeout(90_000)` in the fetch call.
+n8n was deliberately not the intelligence layer.
 
-**funding_signal COALESCE in Nemo UPDATE unverified in production.** The code is correct but the field has not been confirmed to populate from live Nemo runs since the OUTPUT CONTRACT was added.
+Its job:
 
-**normalizeNemoPayload and extractFrictionType fallback chains should be pruned.** Both functions carry multi-path fallback logic from before the OUTPUT CONTRACT existed. Once production confirms the contract is stable, primary path only is sufficient.
+- Trigger the workflow.
+- Send the campaign message or seed list.
+- Parse returned `session_id` values.
+- Call the next stages with only `session_id`.
 
----
+Its non-job:
 
-## 5. PROMPT ARCHITECTURE
+- Carry full lead payloads.
+- Transform model outputs.
+- Hold business logic.
+- Decide enrichment strategy.
 
-### Typed Contracts vs Natural Language
+That division is what made the later Clay-native idea possible. If n8n can be reduced to handoffs, Clay columns can become the handoffs.
 
-The output contract for each agent is defined two ways simultaneously:
+Relevant files:
 
-**Typed contract (JSON skeleton in prompt):** Tells the model exactly which keys to produce and what type each value should be. Reduces key name drift (`Contact_Recon` vs `contact_recon`, `Enriched_Lead` vs top-level). Required for Nemo because responseSchema is incompatible with grounding.
+- `n8n_pipelines/WORKFLOW_BUILDER.md`
+- `n8n_pipelines/WORKFLOW_USAGE.md`
 
-**responseSchema (Gemini-enforced):** For Neptune only. The schema is enforced by the model runtime — the output is guaranteed to have the required keys. Cannot be used with Nemo (grounding incompatibility).
+## Failure Modes That Shaped the System
 
-**Natural language directives:** Still required for behavioral constraints — citation prohibition, voice constraints, sourcing requirements, CATALYST_STALE detection, friction type selection. The model's reasoning about these cannot be replaced by a schema.
+The project is useful because failures were documented, not hidden.
 
-### Why Positive Framing Over Prohibitions
+Important fixes included:
 
-Prohibitions activate the concept being suppressed ("NEVER write [1]" makes the model think about [1]). All behavioral constraints in the current prompts use positive instruction:
-- "All string values must be plain prose only. No reference markers of any kind." (not "never write citations")
-- "Direct_URL must be the company's own domain, confirmed by direct navigation." (not "never write a vertex URL")
-- "Return immediately after writing SHIPWRECKED status." (not "do not enrich further")
+- Aggregator companies being mistaken for target accounts.
+- Vertex AI redirect URLs being stored instead of real company domains.
+- Model citations polluting string fields.
+- Contact JSON being stored incorrectly inside JSONB.
+- Enriched rows being reset to `Scraped` on reruns.
+- Stale leads briefly appearing alive.
+- Model truncation creating empty final output.
+- Stage failures being invisible without `fleet_errors`.
 
-The one exception is VOICE_CONSTRAINT, which retains "Do not reference the act of observing" per explicit instruction. The broader forbidden-phrases list (founders I work with, clients I advise, etc.) was removed in favor of positive identity framing.
+Relevant file:
 
-### VOICE_CONSTRAINT Rationale
+- `system_files/CHANGELOG.md`
 
-Neptune produces cold outreach copy. The risk is the model defaulting to consultant-speak ("In my work with founders..." / "I advise companies like yours..."). This breaks the reader's trust immediately.
+## Why This Points Back To Clay
 
-The current constraint: "Write as someone who has spent 200 hours studying GTM failure patterns from job postings and LinkedIn signals. Every observation comes from pattern recognition across hundreds of postings, not personal client work. State what you observed. Do not reference the act of observing."
+The server proved the contracts. Clay is the natural operating surface.
 
-This works because it gives the model a specific, consistent identity to inhabit rather than a list of things to avoid. The identity anchor is more stable across token generation than prohibition.
+The future version does not need Cloud Run, Postgres, or n8n as the center. It needs:
 
-### The Forensic Dictionary and friction_type Column
+- Clay tables with stable identifiers.
+- One job per AI column.
+- Waterfall enrichment with cost gates.
+- Forensic signal columns.
+- A compact handoff column.
+- A final payload/render column.
+- HubSpot-ready export fields and QA gates.
 
-The four canonical friction types are the core analytical vocabulary of the pipeline:
+That design is documented in:
 
-| Type | Definition | Maps to column value |
-|---|---|---|
-| API Stutter | Data tools exist but do not talk to each other | `API Stutter` |
-| Scale Friction | Growth is outpacing data infrastructure capacity | `Scale Friction` |
-| Manual Data Debt | Humans doing work that should be automated | `Manual Data Debt` |
-| Displacement Signal | Paying a platform for something a specialist does better | `Displacement Signal` |
+- `CLAY_PLAYBOOK.md`
 
-Nemo identifies which type applies and writes it to `Forensic_Friction_Type` in the OUTPUT CONTRACT. `extractFrictionType()` reads this and writes it to the `friction_type` column as an exact string match. Neptune reads this from the nemo_payload and uses it to name the villain in the Outreach Bite.
+## Reviewer Path
 
-The `friction_type` column in Postgres is the surface for Retool filtering — users can filter leads by friction category to prioritize outreach.
+If you are reviewing this project for a RevOps, MarOps, GTM Ops, or Automation role, read in this order:
 
-### Schwartz Outreach Principles (Neptune)
+1. `README.md` -- architecture story and why it matters.
+2. `agent_framework/agents/stage_contracts.md` -- input/output contracts.
+3. `system_files/src/utils/parser.py` -- n8n-to-server normalization.
+4. `system_files/src/utils/parser.js` -- cleanup and extraction layer.
+5. `system_files/src/agents/ahab.js` -- grounded discovery and aggregator filtering.
+6. `system_files/src/agents/nemo.js` -- enrichment stage.
+7. `system_files/src/agents/neptune.js` -- final synthesis stage.
+8. `CLAY_PLAYBOOK.md` -- future Clay-native translation.
 
-Neptune's Outreach Bite follows three Schwartz copywriting principles:
+## Role Fit
 
-1. **REFLECT** — Name what the prospect is already doing. Opens with observable reality, not a pitch.
-2. **NAME THE VILLAIN** — Name the specific tool, process, or platform that is failing them.
-3. **OFFER THE SPECIFIC OUTCOME** — State the exact thing they already want, in their operational language.
+This project is relevant to entry/junior:
 
-The Bite is 3–4 sentences. Never a generic call to action — closes with one peer-level observation. First person singular only.
+- RevOps
+- MarOps
+- Marketing Automation
+- GTM Ops
+- Clay operator / Clay builder
+- Automation Specialist
 
----
-
-## 6. DEPLOYMENT PROCEDURE
-
-### Step-by-Step: Code Change to Live Revision
-
-The repo lives at `c:\Users\raymo\pipeline-as-file-architecture` on Windows. The Cloud Run service is deployed from Cloud Shell, which needs a copy of the source.
-
-**Step 1 — Commit the change on Windows:**
-```bash
-cd "c:\Users\raymo\pipeline-as-file-architecture"
-git add outbound-pipeline/fleet-agents/server.js
-git commit -m "fix: description of change"
-git push origin main
-```
-
-**Step 2 — Open Cloud Shell in GCP Console.**
-Navigate to console.cloud.google.com → Cloud Shell icon (top right).
-
-**Step 3 — Clone or pull the repo in Cloud Shell:**
-```bash
-# First time:
-git clone https://github.com/BlueSkyGTM/pipeline-as-file-architecture.git ~/pafa
-
-# Subsequent times:
-cd ~/pafa && git pull origin main
-```
-
-**Step 4 — Copy server.js to the fleet-agents directory:**
-```bash
-cp ~/pafa/outbound-pipeline/fleet-agents/server.js ~/fleet-agents/server.js
-```
-
-The `~/fleet-agents/` directory on Cloud Shell is the deploy source. It must contain `server.js` and `package.json`.
-
-**Step 5 — Deploy:**
-```bash
-cd ~/fleet-agents
-gcloud run deploy fleet-agents \
-  --source . \
-  --region us-central1 \
-  --project project-8bd530c5-c699-4b50-868
-```
-
-Accept prompts as they appear. Deployment takes 2–4 minutes.
-
-**Step 6 — Verify deployment:**
-```bash
-curl -X POST https://fleet-agents-954265623326.us-central1.run.app/api/ahab \
-  -H "Content-Type: application/json" \
-  -d '{"message": "test"}'
-```
-
-A successful response (even an error from Gemini) confirms the service is running. A connection timeout means the deploy failed or the VPC is unreachable.
-
-**Step 7 — Verify the correct revision is live:**
-In GCP Console → Cloud Run → fleet-agents → Revisions tab. The latest revision should show 100% traffic.
-
-### How to Verify Deployment Succeeded
-
-Check Cloud Run logs in GCP Console → Cloud Run → fleet-agents → Logs. Look for:
-- `Fleet agents listening on port 8080` (Cloud Run injects PORT=8080)
-- No crash-loop entries
-- Successful incoming requests returning 200
-
-If Gemini calls are failing, check Vertex AI logs in the same project for quota or authentication errors.
-
----
-
-## 7. CAMPAIGN BUILDING
-
-### Overview
-
-Every campaign is a 6-node n8n workflow. The only things that change between campaigns are the cron schedule and the campaign message string. The fleet-agents service, Postgres infrastructure, and all node logic are identical across campaigns.
-
-### What Changes Per Campaign
-
-| Variable | Description |
-|---|---|
-| Cron expression | When the campaign runs (daily, weekly, specific hour) |
-| Campaign message | Plain English instruction sent to Ahab |
-| Output table | Which Postgres table Ahab writes to |
-
-The output table is currently hardcoded in server.js per agent handler. For a new campaign that writes to a different table, server.js must be updated. The n8n workflow does not know or control which table is written to.
-
-### What Never Changes
-
-- n8n node types, typeVersions, names, positions
-- All fleet-agents URLs
-- Parse_Session_IDs jsCode
-- All connections between nodes
-- Ahab body field: `name: "message"`, `value: "={{ $json.campaign_message }}"`
-- Nemo/Neptune body fields: `name: "session_id"`, `value: "={{ $json.session_id }}"`
-
-### n8n Workflow Template
-
-Full deterministic build instructions in `outbound-pipeline/framework/WORKFLOW_BUILDER.md`. Follow that document mechanically. Do not make architectural decisions when building a workflow — every element is specified.
-
-**Campaign message format:**
-```
-Campaign: {Campaign Name}. Search for {role types} at {company profile}. Tech signals: {tool1}, {tool2}. {filters}. Return maximum leads.
-```
-
-### Active Campaigns
-
-| Campaign | n8n Workflow | Output Table | Schedule |
-|---|---|---|---|
-| GTM Career Hunt | GTM-Career-Hunt-V6 | gtm_career_leads | Daily 2AM |
-| GTM Upwork Hunt | (see CLAUDE.md) | gtm_upwork_leads | Daily 6AM |
-| Accountant Career Hunt | (see CLAUDE.md) | accountant_career_leads | Daily 4AM |
-| Accountant Bulk Enrichment | (see CLAUDE.md) | accountant_bulk_leads | Weekly Mon 3AM |
-| Accountant Upwork Hunt | (see CLAUDE.md) | accountant_upwork_leads | Daily 7AM |
-| Researcher Career Hunt | (see CLAUDE.md) | researcher_career_leads | Daily 2:30AM |
-
-All campaigns share the same fleet-agents service and the same server.js. Campaign separation is purely by Postgres table, not by service or endpoint.
-
-### Adding a New Campaign
-
-1. Create the output table in Postgres (copy the lead table schema, change the name)
-2. Grant `fleet_app` SELECT/INSERT/UPDATE on the new table
-3. Update `server.js` to write to the new table in Ahab's INSERT and Nemo/Neptune's UPDATE queries
-4. Deploy updated server.js to Cloud Run
-5. Build the n8n workflow JSON using WORKFLOW_BUILDER.md
-6. Import the workflow JSON into n8n
-7. Configure Cloud Scheduler to trigger the n8n webhook on the desired cron
-8. Activate the n8n workflow only after Cloud Scheduler is confirmed
-
----
-
-## APPENDIX: Architecture Decisions That Must Not Be Changed Without Explicit Instruction
-
-These constraints were hardened through production failures. Do not re-litigate them.
-
-**Nemo must never have responseSchema.** Gemini does not support `responseSchema` and `tools: [{ googleSearch: {} }]` simultaneously. Adding responseSchema to Nemo silently breaks grounding — Nemo calls Gemini without live search and produces hallucinated enrichment. This is worse than a failure because it appears to succeed.
-
-**contact_recon must be passed as a raw object, never JSON.stringify'd.** The pg driver serializes plain JS objects into JSONB correctly. Wrapping in `JSON.stringify` stores a string literal inside a JSONB column. Retool's `contact_recon->>'email'` operators then return null for every row.
-
-**ON CONFLICT must have the `WHERE gtm_career_leads.status = 'Scraped'` guard.** Without it, a nightly Ahab re-run resets every previously-completed lead back to Scraped, re-queuing it through Nemo and Neptune and overwriting all enrichment work.
-
-**session_id must always come from input_session_id.** The Ahab payload (received by Nemo) and the Nemo payload (received by Neptune) never contain a session_id field. Any attempt to read `payload.session_id` as a primary or fallback source is always undefined.
-
-**runNeptuneSynthesis is the single source of truth for Neptune synthesis.** Both `/api/neptune` and `/api/reprocess` call this function. Behavioral changes must be made inside the function. The endpoint handlers are thin wrappers only.
+It is not positioned as a software engineering portfolio first. The code exists to prove systems thinking: clean handoffs, CRM-ready payloads, enrichment discipline, context control, and operational QA.
